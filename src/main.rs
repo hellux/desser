@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::BufReader;
 
 mod ast;
+mod lex;
 mod structured;
 
 use structured::FileParser;
@@ -81,7 +82,11 @@ fn main() -> Result<(), std::io::Error> {
     let b = fp.parse();
     println!("{:?}", b);
 
-    println!("{}", std::mem::size_of::<std::io::Error>());
+    let toks: Vec<_> = lex::tokenize("hej hej").collect();
+    println!("{:?}", toks);
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;
