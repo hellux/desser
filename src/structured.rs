@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, Error, ErrorKind, Read, Seek, SeekFrom};
 
 use crate::ast;
+use crate::sym;
 use crate::{PError, PResult};
 
 #[derive(Debug)]
@@ -22,7 +23,7 @@ pub struct StructField {
 pub struct Struct {
     pub start: u64,
     pub size: u64,
-    pub fields: Vec<(Option<ast::Id>, StructField)>,
+    pub fields: Vec<(Option<sym::Sym>, StructField)>,
 }
 
 #[derive(Debug)]
@@ -50,7 +51,7 @@ impl<R: BufRead + Seek> FileParser<R> {
     }
 
     pub fn parse(&mut self) -> PResult<StructuredFile> {
-        let root = self.parse_struct("root", &vec![])?;
+        let root = self.parse_struct(0, &vec![])?;
 
         Ok(StructuredFile {
             size: self.length,
@@ -73,11 +74,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         }
     }
 
-    pub fn eval(
-        &self,
-        expr: &ast::Expr,
-        ns: &ast::Namespace,
-    ) -> PResult<i128> {
+    pub fn eval(&self, expr: &ast::Expr, ns: &sym::Namespace) -> PResult<i64> {
         match expr {
             ast::Expr::Int(val) => Ok(*val),
             ast::Expr::Identifier(id) => self.eval_id(id, ns),
@@ -107,7 +104,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         }
     }
 
-    fn eval_id(&self, id: &ast::Id, ns: &ast::Namespace) -> PResult<i128> {
+    fn eval_id(&self, id: &sym::Sym, ns: &sym::Namespace) -> PResult<i64> {
         if let Some(val) = ns.get(id) {
             Ok(*val)
         } else if let Some(val) = self.dsr.constants.get(id) {
@@ -134,7 +131,7 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_array(
         &mut self,
-        ns: &ast::Namespace,
+        ns: &sym::Namespace,
         kind: &ast::FieldKind,
         size: &ast::ArraySize,
     ) -> PResult<Vec<StructFieldKind>> {
@@ -165,15 +162,15 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_struct(
         &mut self,
-        id: &str,
-        params: &Vec<i128>,
+        id: sym::Sym,
+        params: &Vec<i64>,
     ) -> PResult<Struct> {
-        let spec = self.dsr.structs.get(id).ok_or(Error::new(
+        let spec = self.dsr.structs.get(&id).ok_or(Error::new(
             ErrorKind::NotFound,
             format!("Struct {} not declared.", id),
         ))?;
 
-        let mut ns = ast::Namespace::new();
+        let mut ns = sym::Namespace::new();
 
         for (pval, pname) in params.iter().zip(spec.parameters.iter()) {
             ns.insert(pname.clone(), *pval);
@@ -198,7 +195,7 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_field_kind(
         &mut self,
-        ns: &ast::Namespace,
+        ns: &sym::Namespace,
         kind: &ast::FieldKind,
     ) -> PResult<StructFieldKind> {
         Ok(match kind {
@@ -214,14 +211,14 @@ impl<R: BufRead + Seek> FileParser<R> {
                 for p in params {
                     args.push(self.eval(p, ns)?);
                 }
-                StructFieldKind::Struct(self.parse_struct(id, &args)?)
+                StructFieldKind::Struct(self.parse_struct(*id, &args)?)
             }
         })
     }
 
     fn parse_field(
         &mut self,
-        ns: &ast::Namespace,
+        ns: &sym::Namespace,
         field: &ast::Field,
     ) -> PResult<StructField> {
         let from = match &field.start {

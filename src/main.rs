@@ -5,6 +5,7 @@ use std::io::BufReader;
 mod ast;
 mod lex;
 mod structured;
+mod sym;
 
 use structured::FileParser;
 
@@ -33,6 +34,7 @@ impl From<std::io::ErrorKind> for PError {
 pub type PResult<T> = Result<T, PError>;
 
 fn main() -> Result<(), std::io::Error> {
+    /*
     let psf2: ast::File = ast::File {
         structs: vec![(
             ast::Id::from("root"),
@@ -81,12 +83,16 @@ fn main() -> Result<(), std::io::Error> {
     let mut fp = FileParser::new(Box::new(f), psf2).unwrap();
     let b = fp.parse();
     println!("{:?}", b);
+    */
 
-    let toks: Vec<_> = lex::tokenize("hej hej").collect();
-    println!("{:?}", toks);
+    let src = "def root { u32 $version ~ 0x00 } ";
+    let symtab = sym::SymbolTable::new();
+    let (stream, symtab, errors) = lex::parse_token_trees(symtab, src);
+
+    println!("{:?}, {:?}", symtab, errors);
+    for t in stream.unwrap() {
+        println!("{:?}", t);
+    }
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests;

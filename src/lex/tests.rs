@@ -8,7 +8,7 @@ fn is_whitespace(c: char) -> bool {
 }
 
 fn check_lexing(src: &str, expected: &str) {
-    let actual: String = lex::tokenize(src)
+    let actual: String = raw::tokenize(src)
         .map(|token| format!("{:?}", token))
         .collect::<String>()
         .chars()
@@ -21,36 +21,18 @@ fn check_lexing(src: &str, expected: &str) {
     assert_eq!(actual, expected);
 }
 
-#[test]
-fn lex_floats() {
-    // valid floats
-    check_lexing("1.1", "Token { kind: Literal(Float(Decimal)), len: 3 }");
-    check_lexing("1.1e0", "Token { kind: Literal(Float(Decimal)), len: 5 }");
-    check_lexing("1.", "Token { kind: Literal(Float(Decimal)), len: 2 }");
-    check_lexing(
-        "234982374.239847238947",
-        "Token { kind: Literal(Float(Decimal)), len: 22 }",
-    );
-    check_lexing(
-        "0xabc.abc",
-        "Token { kind: Literal(Float(Hexadecimal)), len: 9 }",
-    );
-    check_lexing("0o123.321", "Token { kind: Literal(Float(Octal)), len: 9 }");
-    check_lexing("5e-5", "Token { kind: Literal(Float(Decimal)), len: 4 }");
-    check_lexing("100E0", "Token { kind: Literal(Float(Decimal)), len: 5 }");
-
-    // non-floats / invalid
-    check_lexing(
-        "1.e0",
-        "Token { kind: Literal(Float(Decimal)), len: 2 }
-         Token { kind: Ident, len: 2 }",
-    );
-    check_lexing("1.1e", "Token { kind: Literal(Invalid), len: 4 }");
-    check_lexing(
-        ".1",
-        "Token { kind: Dot, len: 1 }
-         Token { kind: Literal(Int(Decimal)), len: 1 }",
-    );
+fn check_cooking(src: &str, expected: &str) {
+    let actual: String = cook::tokenize(src)
+        .map(|(_, token)| format!("{:?}", token.kind))
+        .collect::<String>()
+        .chars()
+        .filter(|c| !is_whitespace(*c))
+        .collect();
+    let expected: String = String::from(expected)
+        .chars()
+        .filter(|c| !is_whitespace(*c))
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -68,11 +50,6 @@ fn lex_integers() {
 
     // non-integers / invalid
     check_lexing("ffff", "Token { kind: Ident, len: 4 }");
-    check_lexing(
-        "0b2",
-        "Token { kind: Literal(Invalid), len: 2 }
-         Token { kind: Literal(Int(Decimal)), len: 1}",
-    );
 }
 
 /* */
@@ -116,29 +93,29 @@ fn lex_strings() {
     // valid strings / chars
     check_lexing(
         r#""string""#,
-        "Token { kind: Literal(Str { closed: true } ), len: 8 }"
+        "Token { kind: Literal(Str { closed: true } ), len: 8 }",
     );
     check_lexing(
         "'char'",
-        "Token { kind: Literal(Char { closed: true } ), len: 6 }"
+        "Token { kind: Literal(Char { closed: true } ), len: 6 }",
     );
     check_lexing(
         r#""string with \\ escape""#,
-        "Token { kind: Literal(Str { closed: true } ), len: 23 }"
+        "Token { kind: Literal(Str { closed: true } ), len: 23 }",
     );
     check_lexing(
         r#"'char with \' escape'"#,
-        "Token { kind: Literal(Char { closed: true } ), len: 21 }"
+        "Token { kind: Literal(Char { closed: true } ), len: 21 }",
     );
 
     // invalid
     check_lexing(
         r#""unclosed string"#,
-        "Token { kind: Literal(Str { closed: false } ), len: 16 }"
+        "Token { kind: Literal(Str { closed: false } ), len: 16 }",
     );
     check_lexing(
         r#"'unclosed char \'"#,
-        "Token { kind: Literal(Char { closed: false } ), len: 17 }"
+        "Token { kind: Literal(Char { closed: false } ), len: 17 }",
     );
 }
 
@@ -166,6 +143,47 @@ fn lex_symbols() {
          Token { kind: Or, len: 1 }
          Token { kind: Plus, len: 1 }
          Token { kind: Star, len: 1 }
-         Token { kind: Caret, len: 1 }"
+         Token { kind: Caret, len: 1 }",
+    );
+}
+
+#[test]
+fn cook_integers() {
+    check_cooking("0xff", "Literal(Int(255)) Eof");
+    check_cooking("0x", "Literal(Int(0)) Eof");
+}
+
+#[test]
+fn cook_structs() {
+    check_cooking(
+        r#"
+    def psf2_header {
+        [u8; 4] $magic ~ "head",
+        u32 $version ~ <= 0,
+        until $headersize ignore,
+    }"#,
+        "
+        Keyword(Def)
+        Ident(0)
+        OpenDelim(Brace)
+        OpenDelim(Bracket)
+        Ident(1)
+        SemiColon
+        Literal(Int(4))
+        CloseDelim(Bracket)
+        Ident(2)
+        Tilde
+        Literal(Str([104,101,97,100]))
+        CommaIdent(3)
+        Ident(4)
+        Tilde
+        Lt
+        Eq
+        Literal(Int(0))
+        CommaIdent(5)
+        Ident(6)
+        Ident(7)
+        CommaCloseDelim(Brace)
+        Eof",
     );
 }

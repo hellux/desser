@@ -1,5 +1,3 @@
-// Inspired by rustc_lexer by The Rust project developers.
-
 use std::str::Chars;
 
 use self::LiteralKind::*;
@@ -10,39 +8,42 @@ pub enum TokenKind {
     LineComment,
     BlockComment { closed: bool },
     Whitespace,
-    Ident,
-    Literal(LiteralKind),
-    SemiColon,
-    Comma,
+
     OpenParen,
     CloseParen,
     OpenBrace,
     CloseBrace,
     OpenBracket,
     CloseBracket,
+    SemiColon,
+    Comma,
     Dot,
+
+    Literal(LiteralKind),
+    Ident,
+
     Dollar,
     Eq,
     Lt,
     Gt,
-    Minus,
     And,
     Or,
+    Minus,
     Plus,
     Star,
     Question,
     Slash,
     Caret,
+    Tilde,
+
     Unknown,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub enum LiteralKind {
     Int(Base),
-    Float(Base),
     Char { closed: bool },
     Str { closed: bool },
-    Invalid,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -53,10 +54,21 @@ pub enum Base {
     Decimal,
 }
 
+impl Base {
+    pub fn radix(&self) -> u32 {
+        match self {
+            Base::Binary => 2,
+            Base::Octal => 8,
+            Base::Decimal => 10,
+            Base::Hexadecimal => 16,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Token {
-    kind: TokenKind,
-    len: usize,
+    pub kind: TokenKind,
+    pub len: usize,
 }
 
 #[derive(Debug)]
@@ -65,29 +77,12 @@ struct Cursor<'a> {
     chars: Chars<'a>,
 }
 
-fn is_whitespace(c: char) -> bool {
-    match c {
-        '\n' | ' ' => true,
-        _ => false,
-    }
-}
-
 fn is_id_start(c: char) -> bool {
     match c {
         '_' => true,
         c if c.is_ascii_alphabetic() => true,
         _ => false,
     }
-}
-
-fn is_digit(c: char, base: Base) -> bool {
-    let radix = match base {
-        Base::Binary => 2,
-        Base::Octal => 8,
-        Base::Decimal => 10,
-        Base::Hexadecimal => 16,
-    };
-    c.is_digit(radix)
 }
 
 impl<'a> Cursor<'a> {
@@ -122,8 +117,7 @@ impl<'a> Cursor<'a> {
 
 impl Cursor<'_> {
     fn advance_token(&mut self) -> Token {
-        let peek_char = self.eat().unwrap();
-        let kind = match peek_char {
+        let kind = match self.eat().unwrap() {
             '/' => match self.peek() {
                 '/' => {
                     self.eat_while(|c| c != '\n');
@@ -140,19 +134,19 @@ impl Cursor<'_> {
                 closed: self.eat_string('"'),
             }),
 
-            c if is_whitespace(c) => {
-                self.eat_while(is_whitespace);
+            ' ' | '\n' => {
+                self.eat_while(|c| c == ' ' || c == '\n');
                 Whitespace
             }
 
             c if is_id_start(c) => {
                 self.eat_while(|c| is_id_start(c) || c.is_digit(10));
-                println!("{}", self.len_consumed());
                 Ident
             }
 
             c @ '0'..='9' => self.number(c),
 
+            '$' => Dollar,
             ';' => SemiColon,
             ',' => Comma,
             '.' => Dot,
@@ -163,7 +157,6 @@ impl Cursor<'_> {
             '[' => OpenBracket,
             ']' => CloseBracket,
             '?' => Question,
-            '$' => Dollar,
             '=' => Eq,
             '<' => Lt,
             '>' => Gt,
@@ -173,6 +166,7 @@ impl Cursor<'_> {
             '+' => Plus,
             '*' => Star,
             '^' => Caret,
+            '~' => Tilde,
 
             _ => Unknown,
         };
@@ -230,40 +224,11 @@ impl Cursor<'_> {
                 '0'..='9' | '_' | '.' | 'e' | 'E' => self.eat_digits(base),
                 _ => return Literal(Int(base)),
             };
-            if !has_digits {
-                return Literal(Invalid);
-            }
         } else {
             self.eat_digits(base);
         };
 
-        match self.peek() {
-            '.' => {
-                self.eat();
-                if is_digit(self.peek(), base) {
-                    self.eat_digits(base);
-                    if self.peek() == 'e' || self.peek() == 'E' {
-                        return self.eat_float_exponent(base);
-                    }
-                }
-                Literal(Float(base))
-            }
-            'e' | 'E' => self.eat_float_exponent(base),
-            _ => Literal(Int(base)),
-        }
-    }
-
-    fn eat_float_exponent(&mut self, base: Base) -> TokenKind {
-        self.eat();
-        if self.peek() == '-' {
-            self.eat();
-        }
-
-        if !self.eat_digits(base) {
-            Literal(Invalid)
-        } else {
-            Literal(Float(base))
-        }
+        Literal(Int(base))
     }
 
     fn eat_digits(&mut self, base: Base) -> bool {
@@ -273,7 +238,7 @@ impl Cursor<'_> {
                 '_' => {
                     self.eat();
                 }
-                c if is_digit(c, base) => {
+                c if c.is_digit(base.radix()) => {
                     self.eat();
                     has_digits = true;
                 }
@@ -298,12 +263,17 @@ impl Cursor<'_> {
     }
 }
 
+pub fn first_token(input: &str) -> Token {
+    Cursor::new(input).advance_token()
+}
+
+#[cfg(test)]
 pub fn tokenize(mut input: &str) -> impl Iterator<Item = Token> + '_ {
     std::iter::from_fn(move || {
         if input.is_empty() {
             None
         } else {
-            let token = Cursor::new(input).advance_token();
+            let token = first_token(input);
             input = &input[token.len..];
             Some(token)
         }

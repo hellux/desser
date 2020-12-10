@@ -1,0 +1,288 @@
+use crate::lex::raw;
+use crate::lex::{LexError, LexErrorKind, Spacing, Span};
+use crate::sym;
+
+use self::TokenKind::*;
+
+#[derive(Debug, Clone)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub span: Span,
+}
+
+impl Token {
+    fn new(kind: TokenKind, span: Span) -> Self {
+        Token { kind, span }
+    }
+
+    pub fn dummy() -> Self {
+        Token {
+            kind: TokenKind::Unknown,
+            span: Span(0, 0),
+        }
+    }
+
+    pub fn take(&mut self) -> Self {
+        std::mem::replace(self, Token::dummy())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TokenKind {
+    OpenDelim(Delim),
+    CloseDelim(Delim),
+    SemiColon,
+    Comma,
+    Dot,
+
+    Literal(LitKind),
+    Keyword(KeywordKind),
+    Ident(sym::Sym),
+
+    Eq,
+    Lt,
+    Gt,
+    And,
+    Or,
+    Minus,
+    Plus,
+    Star,
+    Question,
+    Slash,
+    Caret,
+    Tilde,
+
+    Unknown,
+    Eof,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Delim {
+    Paren,
+    Brace,
+    Bracket,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum KeywordKind {
+    Def,
+    Set,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Lit {
+    pub kind: LitKind,
+    pub symbol: sym::Sym,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum LitKind {
+    Int(i64),
+    Char(u8),
+    Str(Vec<u8>),
+}
+
+#[derive(Clone, Debug)]
+pub struct TokenCooker<'a> {
+    symtab: sym::SymbolTable,
+    pos: usize,
+    src: &'a str,
+    errors: Vec<LexError>,
+}
+
+impl<'a> TokenCooker<'a> {
+    pub fn new(symtab: sym::SymbolTable, src: &'a str) -> Self {
+        TokenCooker {
+            symtab,
+            pos: 0,
+            src,
+            errors: Vec::new(),
+        }
+    }
+
+    pub fn consume(self) -> (sym::SymbolTable, Vec<LexError>) {
+        (self.symtab, self.errors)
+    }
+
+    fn err(&mut self, kind: LexErrorKind, start: usize) {
+        self.errors.push(LexError {
+            kind,
+            span: Span::new(start, self.pos),
+        });
+    }
+
+    pub fn next_token(&mut self) -> (Spacing, Token) {
+        let mut spacing = Spacing::Joint;
+
+        loop {
+            let remaining_src = &self.src[self.pos..];
+            if remaining_src.is_empty() {
+                return (
+                    spacing,
+                    Token::new(TokenKind::Eof, Span::new(self.pos, self.pos)),
+                );
+            }
+
+            let start = self.pos;
+            let token = raw::first_token(remaining_src);
+            self.pos += token.len;
+
+            match self.cook_token(token.kind, start) {
+                Some(kind) => {
+                    return (
+                        spacing,
+                        Token::new(kind, Span::new(start, self.pos)),
+                    );
+                }
+                None => spacing = Spacing::Alone,
+            }
+        }
+    }
+
+    fn cook_token(
+        &mut self,
+        raw: raw::TokenKind,
+        start: usize,
+    ) -> Option<TokenKind> {
+        match raw {
+            raw::TokenKind::LineComment => None,
+            raw::TokenKind::Whitespace => None,
+            raw::TokenKind::BlockComment { closed } => {
+                if !closed {
+                    self.err(LexErrorKind::UnclosedBlockComment, start);
+                }
+                None
+            }
+
+            raw::TokenKind::OpenParen => Some(OpenDelim(Delim::Paren)),
+            raw::TokenKind::CloseParen => Some(CloseDelim(Delim::Paren)),
+            raw::TokenKind::OpenBrace => Some(OpenDelim(Delim::Brace)),
+            raw::TokenKind::CloseBrace => Some(CloseDelim(Delim::Brace)),
+            raw::TokenKind::OpenBracket => Some(OpenDelim(Delim::Bracket)),
+            raw::TokenKind::CloseBracket => Some(CloseDelim(Delim::Bracket)),
+
+            raw::TokenKind::SemiColon => Some(SemiColon),
+            raw::TokenKind::Comma => Some(Comma),
+            raw::TokenKind::Dot => Some(Dot),
+
+            raw::TokenKind::Literal(kind) => {
+                let litkind = match kind {
+                    raw::LiteralKind::Int(base) => self.cook_int(start, base),
+                    raw::LiteralKind::Char { closed } => {
+                        self.cook_char(start, closed)
+                    }
+                    raw::LiteralKind::Str { closed } => {
+                        self.cook_str(start, closed)
+                    }
+                };
+                Some(Literal(litkind))
+            }
+            raw::TokenKind::Ident => Some(self.cook_ident(start)),
+
+            raw::TokenKind::Eq => Some(Eq),
+            raw::TokenKind::Lt => Some(Lt),
+            raw::TokenKind::Gt => Some(Gt),
+            raw::TokenKind::And => Some(And),
+            raw::TokenKind::Or => Some(Or),
+            raw::TokenKind::Minus => Some(Minus),
+            raw::TokenKind::Plus => Some(Plus),
+            raw::TokenKind::Star => Some(Star),
+            raw::TokenKind::Question => Some(Question),
+            raw::TokenKind::Slash => Some(Slash),
+            raw::TokenKind::Caret => Some(Caret),
+            raw::TokenKind::Tilde => Some(Tilde),
+
+            raw::TokenKind::Dollar => None,
+            raw::TokenKind::Unknown => {
+                self.err(LexErrorKind::UnknownToken, start);
+                Some(Unknown)
+            }
+        }
+    }
+
+    fn cook_int(&mut self, start: usize, base: raw::Base) -> LitKind {
+        let skip = match base {
+            raw::Base::Decimal => 0,
+            _ => 2,
+        };
+        let content = &self.src[start + skip..self.pos];
+        let int = i64::from_str_radix(content, base.radix());
+        if let Ok(val) = int {
+            LitKind::Int(val)
+        } else {
+            self.err(LexErrorKind::InvalidIntLiteral, start);
+            LitKind::Int(0)
+        }
+    }
+
+    fn cook_char(&mut self, start: usize, closed: bool) -> LitKind {
+        if !closed {
+            self.err(LexErrorKind::UnclosedCharLiteral, start);
+        }
+
+        let bytes = self.get_str_bytes(start);
+
+        if let [b] = bytes.as_slice() {
+            LitKind::Char(*b)
+        } else {
+            self.err(LexErrorKind::InvalidCharLiteral, start);
+            LitKind::Char(0)
+        }
+    }
+
+    fn cook_str(&mut self, start: usize, closed: bool) -> LitKind {
+        if !closed {
+            self.err(LexErrorKind::UnclosedStrLiteral, start);
+        }
+
+        let bytes = self.get_str_bytes(start);
+
+        LitKind::Str(bytes)
+    }
+
+    fn get_str_bytes(&mut self, start: usize) -> Vec<u8> {
+        let content =
+            &mut self.src[start + 1..self.pos - 1].chars().into_iter();
+        let mut bytes = Vec::new();
+        loop {
+            match &content.next() {
+                Some('\\') => match content.next() {
+                    Some('n') => bytes.push('\n' as u8),
+                    Some('t') => bytes.push('\t' as u8),
+                    Some('r') => bytes.push('\r' as u8),
+                    Some('0') => bytes.push('\0' as u8),
+                    _ => self.err(LexErrorKind::InvalidCharLiteral, start),
+                },
+                Some(c) => bytes.push(*c as u8),
+                _ => break,
+            }
+        }
+        bytes
+    }
+
+    fn cook_ident(&mut self, start: usize) -> TokenKind {
+        let id = &self.src[start..self.pos];
+
+        match id {
+            "def" => Keyword(KeywordKind::Def),
+            "set" => Keyword(KeywordKind::Set),
+            id => Ident(self.symtab.insert(id)),
+        }
+    }
+}
+
+#[cfg(test)]
+pub fn tokenize(src: &str) -> impl Iterator<Item = (Spacing, Token)> + '_ {
+    let symtab = sym::SymbolTable::new();
+    let mut cooker = TokenCooker::new(symtab, src);
+    let mut empty = false;
+    std::iter::from_fn(move || {
+        if empty {
+            None
+        } else {
+            let (spacing, token) = cooker.next_token();
+            empty = token.kind == Eof;
+            Some((spacing, token))
+        }
+    })
+}

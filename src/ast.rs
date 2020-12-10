@@ -1,35 +1,25 @@
 use std::collections::HashMap;
 
-pub type Id = String;
-pub type Namespace = HashMap<Id, i128>;
+use crate::sym;
 
 #[derive(Clone)]
 pub struct File {
-    pub structs: HashMap<Id, Struct>,
-    pub constants: Namespace,
+    pub structs: HashMap<sym::Sym, Struct>,
+    pub constants: sym::Namespace,
 }
-
-/*
-// TODO use span on items for error messages
-pub struct Span {
-    pub lo: u32,
-    pub hi: u32,
-    pub srcfile: u16,
-}
-*/
 
 /* Structs */
 
 #[derive(Clone)]
 pub struct Struct {
-    pub parameters: Vec<Id>,
+    pub parameters: Vec<sym::Sym>,
     pub fields: Vec<Field>,
 }
 
 #[derive(Clone)]
 pub struct Field {
     pub start: Addr,
-    pub id: Option<Id>,
+    pub id: Option<sym::Sym>,
     pub kind: FieldKind,
     pub constraint: Option<Constraint>,
 }
@@ -51,7 +41,7 @@ pub enum Addr {
 pub enum FieldKind {
     Value(ValueType),
     Array(Box<FieldKind>, ArraySize),
-    Struct(Id, Vec<Expr>),
+    Struct(sym::Sym, Vec<Expr>),
 }
 
 #[derive(Clone)]
@@ -86,8 +76,8 @@ pub const F64: ValueType = ValueType::Float(11, 52);
 
 #[derive(Clone)]
 pub enum Expr {
-    Int(i128),
-    Identifier(Id),
+    Int(i64),
+    Identifier(sym::Sym),
     Binary(Box<BinOp>),
     Unary(Box<UnOp>),
 }
