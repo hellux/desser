@@ -4,6 +4,7 @@ use std::io::BufReader;
 
 mod ast;
 mod lex;
+mod parse;
 mod structured;
 mod sym;
 
@@ -85,14 +86,15 @@ fn main() -> Result<(), std::io::Error> {
     println!("{:?}", b);
     */
 
-    let src = "def root { u32 $version ~ 0x00 } ";
+    let src = "def root { u32 $version; bitvector(5) $vec; } ";
     let symtab = sym::SymbolTable::new();
     let (stream, symtab, errors) = lex::parse_token_trees(symtab, src);
 
-    println!("{:?}, {:?}", symtab, errors);
-    for t in stream.unwrap() {
-        println!("{:?}", t);
-    }
+    println!("{:?}, \nerrors: {:?}", symtab, errors);
+    println!("{:?}", stream);
+
+    let (spec, symtab) = parse::parse_file_spec(symtab, stream.unwrap());
+    println!("SPECC: {:?}", spec);
 
     Ok(())
 }

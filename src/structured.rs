@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::io::{BufRead, Error, ErrorKind, Read, Seek, SeekFrom};
+use std::io::{BufRead, Error, ErrorKind, Seek, SeekFrom};
 
 use crate::ast;
 use crate::sym;
@@ -7,7 +6,7 @@ use crate::{PError, PResult};
 
 #[derive(Debug)]
 pub enum StructFieldKind {
-    Value(ast::ValueType),
+    Prim(ast::PrimType),
     Array(Vec<StructFieldKind>),
     Struct(Struct),
 }
@@ -34,13 +33,13 @@ pub struct StructuredFile {
 
 pub struct FileParser<R> {
     f: R,
-    dsr: ast::File,
+    dsr: ast::FileSpecification,
     pos: u64,
     length: u64,
 }
 
 impl<R: BufRead + Seek> FileParser<R> {
-    pub fn new(mut f: R, dsr: ast::File) -> PResult<Self> {
+    pub fn new(mut f: R, dsr: ast::FileSpecification) -> PResult<Self> {
         let length = f.seek(SeekFrom::End(0))? * 8;
         Ok(FileParser {
             f,
@@ -114,14 +113,18 @@ impl<R: BufRead + Seek> FileParser<R> {
         }
     }
 
-    fn parse_value(&mut self, ty: ast::ValueType) -> PResult<()> {
+    fn parse_value(
+        &mut self,
+        ty: &ast::PrimType,
+        ns: &sym::Namespace,
+    ) -> PResult<()> {
         let size = match ty {
-            ast::ValueType::Signed(len) => len,
-            ast::ValueType::Unsigned(len) => len,
-            ast::ValueType::Float(exponent, mantissa) => {
-                1 + exponent + mantissa
+            ast::PrimType::Signed(len) => self.eval(&len, ns)?,
+            ast::PrimType::Unsigned(len) => self.eval(&len, ns)?,
+            ast::PrimType::Float(exponent, mantissa) => {
+                1 + self.eval(&exponent, ns)? + self.eval(&mantissa, ns)?
             }
-            ast::ValueType::BitVec(len) => len,
+            ast::PrimType::BitVec(len) => self.eval(&len, ns)?,
         } as i64;
 
         self.seek(SeekFrom::Current(size))?;
@@ -132,7 +135,7 @@ impl<R: BufRead + Seek> FileParser<R> {
     fn parse_array(
         &mut self,
         ns: &sym::Namespace,
-        kind: &ast::FieldKind,
+        kind: &ast::FieldType,
         size: &ast::ArraySize,
     ) -> PResult<Vec<StructFieldKind>> {
         let mut members = Vec::new();
@@ -196,17 +199,17 @@ impl<R: BufRead + Seek> FileParser<R> {
     fn parse_field_kind(
         &mut self,
         ns: &sym::Namespace,
-        kind: &ast::FieldKind,
+        kind: &ast::FieldType,
     ) -> PResult<StructFieldKind> {
         Ok(match kind {
-            ast::FieldKind::Value(ty) => {
-                self.parse_value(*ty)?;
-                StructFieldKind::Value(*ty)
+            ast::FieldType::Prim(ty) => {
+                self.parse_value(ty, ns)?;
+                StructFieldKind::Prim(ty.clone())
             }
-            ast::FieldKind::Array(kind, count) => {
+            ast::FieldType::Array(kind, count) => {
                 StructFieldKind::Array(self.parse_array(ns, kind, count)?)
             }
-            ast::FieldKind::Struct(id, params) => {
+            ast::FieldType::Struct(id, params) => {
                 let mut args = Vec::new();
                 for p in params {
                     args.push(self.eval(p, ns)?);
@@ -231,7 +234,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         };
 
         let start = self.seek(from)?;
-        let kind = self.parse_field_kind(ns, &field.kind)?;
+        let kind = self.parse_field_kind(ns, &field.ty)?;
         let size = self.pos - start;
 
         // TODO check constraints

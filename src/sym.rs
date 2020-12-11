@@ -17,7 +17,7 @@ impl SymbolTable {
         }
     }
 
-    pub fn name(&self, sym: Sym) -> &String {
+    pub fn name(&self, sym: Sym) -> &str {
         &self.arr[sym as usize]
     }
 

@@ -15,16 +15,18 @@ mod cook;
 mod raw;
 mod tree;
 
-pub use cook::{Delim, Token, TokenKind};
-pub use tree::{parse_token_trees, TokenStream, TokenTree, TreeAndSpace};
+pub use cook::{Delim, Keyword, TokKind, Token};
+pub use tree::{
+    parse_token_trees, DelimNode, TokTree, TokenStream, TreeAndSpace,
+};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Spacing {
     Joint,
     Alone,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Span(pub u32, pub u32);
 
 impl Span {
@@ -34,7 +36,7 @@ impl Span {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum LexErrorKind {
+pub enum LErrorKind {
     UnclosedBlockComment,
     UnclosedCharLiteral,
     UnclosedStrLiteral,
@@ -47,12 +49,12 @@ pub enum LexErrorKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct LexError {
-    kind: LexErrorKind,
+pub struct LError {
+    kind: LErrorKind,
     span: Span,
 }
 
-pub type LResult<T> = Result<T, LexError>;
+pub type LResult<T> = Result<T, LError>;
 
 #[cfg(test)]
 mod tests;

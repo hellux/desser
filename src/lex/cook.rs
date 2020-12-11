@@ -1,23 +1,23 @@
 use crate::lex::raw;
-use crate::lex::{LexError, LexErrorKind, Spacing, Span};
+use crate::lex::{LError, LErrorKind, Spacing, Span};
 use crate::sym;
 
-use self::TokenKind::*;
+use self::TokKind::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Token {
-    pub kind: TokenKind,
+    pub kind: TokKind,
     pub span: Span,
 }
 
 impl Token {
-    fn new(kind: TokenKind, span: Span) -> Self {
+    fn new(kind: TokKind, span: Span) -> Self {
         Token { kind, span }
     }
 
     pub fn dummy() -> Self {
         Token {
-            kind: TokenKind::Unknown,
+            kind: TokKind::Unknown,
             span: Span(0, 0),
         }
     }
@@ -28,7 +28,7 @@ impl Token {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum TokenKind {
+pub enum TokKind {
     OpenDelim(Delim),
     CloseDelim(Delim),
     SemiColon,
@@ -36,7 +36,7 @@ pub enum TokenKind {
     Dot,
 
     Literal(LitKind),
-    Keyword(KeywordKind),
+    Keyword(Keyword),
     Ident(sym::Sym),
 
     Eq,
@@ -64,7 +64,7 @@ pub enum Delim {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub enum KeywordKind {
+pub enum Keyword {
     Def,
     Set,
 }
@@ -87,7 +87,7 @@ pub struct TokenCooker<'a> {
     symtab: sym::SymbolTable,
     pos: usize,
     src: &'a str,
-    errors: Vec<LexError>,
+    errors: Vec<LError>,
 }
 
 impl<'a> TokenCooker<'a> {
@@ -100,12 +100,12 @@ impl<'a> TokenCooker<'a> {
         }
     }
 
-    pub fn consume(self) -> (sym::SymbolTable, Vec<LexError>) {
+    pub fn consume(self) -> (sym::SymbolTable, Vec<LError>) {
         (self.symtab, self.errors)
     }
 
-    fn err(&mut self, kind: LexErrorKind, start: usize) {
-        self.errors.push(LexError {
+    fn err(&mut self, kind: LErrorKind, start: usize) {
+        self.errors.push(LError {
             kind,
             span: Span::new(start, self.pos),
         });
@@ -119,7 +119,7 @@ impl<'a> TokenCooker<'a> {
             if remaining_src.is_empty() {
                 return (
                     spacing,
-                    Token::new(TokenKind::Eof, Span::new(self.pos, self.pos)),
+                    Token::new(TokKind::Eof, Span::new(self.pos, self.pos)),
                 );
             }
 
@@ -143,13 +143,13 @@ impl<'a> TokenCooker<'a> {
         &mut self,
         raw: raw::TokenKind,
         start: usize,
-    ) -> Option<TokenKind> {
+    ) -> Option<TokKind> {
         match raw {
             raw::TokenKind::LineComment => None,
             raw::TokenKind::Whitespace => None,
             raw::TokenKind::BlockComment { closed } => {
                 if !closed {
-                    self.err(LexErrorKind::UnclosedBlockComment, start);
+                    self.err(LErrorKind::UnclosedBlockComment, start);
                 }
                 None
             }
@@ -194,7 +194,7 @@ impl<'a> TokenCooker<'a> {
 
             raw::TokenKind::Dollar => None,
             raw::TokenKind::Unknown => {
-                self.err(LexErrorKind::UnknownToken, start);
+                self.err(LErrorKind::UnknownToken, start);
                 Some(Unknown)
             }
         }
@@ -210,14 +210,14 @@ impl<'a> TokenCooker<'a> {
         if let Ok(val) = int {
             LitKind::Int(val)
         } else {
-            self.err(LexErrorKind::InvalidIntLiteral, start);
+            self.err(LErrorKind::InvalidIntLiteral, start);
             LitKind::Int(0)
         }
     }
 
     fn cook_char(&mut self, start: usize, closed: bool) -> LitKind {
         if !closed {
-            self.err(LexErrorKind::UnclosedCharLiteral, start);
+            self.err(LErrorKind::UnclosedCharLiteral, start);
         }
 
         let bytes = self.get_str_bytes(start);
@@ -225,14 +225,14 @@ impl<'a> TokenCooker<'a> {
         if let [b] = bytes.as_slice() {
             LitKind::Char(*b)
         } else {
-            self.err(LexErrorKind::InvalidCharLiteral, start);
+            self.err(LErrorKind::InvalidCharLiteral, start);
             LitKind::Char(0)
         }
     }
 
     fn cook_str(&mut self, start: usize, closed: bool) -> LitKind {
         if !closed {
-            self.err(LexErrorKind::UnclosedStrLiteral, start);
+            self.err(LErrorKind::UnclosedStrLiteral, start);
         }
 
         let bytes = self.get_str_bytes(start);
@@ -251,7 +251,7 @@ impl<'a> TokenCooker<'a> {
                     Some('t') => bytes.push('\t' as u8),
                     Some('r') => bytes.push('\r' as u8),
                     Some('0') => bytes.push('\0' as u8),
-                    _ => self.err(LexErrorKind::InvalidCharLiteral, start),
+                    _ => self.err(LErrorKind::InvalidCharLiteral, start),
                 },
                 Some(c) => bytes.push(*c as u8),
                 _ => break,
@@ -260,12 +260,12 @@ impl<'a> TokenCooker<'a> {
         bytes
     }
 
-    fn cook_ident(&mut self, start: usize) -> TokenKind {
+    fn cook_ident(&mut self, start: usize) -> TokKind {
         let id = &self.src[start..self.pos];
 
         match id {
-            "def" => Keyword(KeywordKind::Def),
-            "set" => Keyword(KeywordKind::Set),
+            "def" => Keyword(Keyword::Def),
+            "set" => Keyword(Keyword::Set),
             id => Ident(self.symtab.insert(id)),
         }
     }

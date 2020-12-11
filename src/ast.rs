@@ -2,79 +2,82 @@ use std::collections::HashMap;
 
 use crate::sym;
 
-#[derive(Clone)]
-pub struct File {
+#[derive(Clone, Debug)]
+pub struct FileSpecification {
     pub structs: HashMap<sym::Sym, Struct>,
     pub constants: sym::Namespace,
 }
 
 /* Structs */
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Struct {
     pub parameters: Vec<sym::Sym>,
     pub fields: Vec<Field>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Field {
     pub start: Addr,
+    pub ty: FieldType,
     pub id: Option<sym::Sym>,
-    pub kind: FieldKind,
     pub constraint: Option<Constraint>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Constraint {
     Const(Vec<u8>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Addr {
     Absolute(Expr),
     Relative(Expr),
 }
 
-/* Field kinds */
+/* Field types */
 
-#[derive(Clone)]
-pub enum FieldKind {
-    Value(ValueType),
-    Array(Box<FieldKind>, ArraySize),
+#[derive(Clone, Debug)]
+pub enum FieldType {
+    Prim(PrimType),
+    Array(Box<FieldType>, ArraySize),
     Struct(sym::Sym, Vec<Expr>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ArraySize {
     Exactly(Expr),
     Within(Expr, Expr),
     AtLeast(Expr),
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum ValueType {
-    Signed(u8),
-    Unsigned(u8),
-    Float(u8, u8), // exponent, mantissa
-    BitVec(u8),
+#[derive(Clone, Debug)]
+pub enum PrimType {
+    Signed(Expr),
+    Unsigned(Expr),
+    Float(Expr, Expr), // exponent, mantissa
+    BitVec(Expr),
 }
 
-pub const U8: ValueType = ValueType::Unsigned(8);
-pub const S8: ValueType = ValueType::Signed(8);
-pub const U16: ValueType = ValueType::Unsigned(16);
-pub const S16: ValueType = ValueType::Signed(16);
-pub const U32: ValueType = ValueType::Unsigned(32);
-pub const S32: ValueType = ValueType::Signed(32);
-pub const U64: ValueType = ValueType::Unsigned(64);
-pub const S64: ValueType = ValueType::Signed(64);
-pub const U128: ValueType = ValueType::Unsigned(128);
-pub const S128: ValueType = ValueType::Signed(128);
-pub const F32: ValueType = ValueType::Float(8, 23);
-pub const F64: ValueType = ValueType::Float(11, 52);
+pub const U8: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(8)));
+pub const S8: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(8)));
+pub const U16: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(16)));
+pub const S16: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(16)));
+pub const U32: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(32)));
+pub const S32: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(32)));
+pub const U64: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(64)));
+pub const S64: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(64)));
+pub const U128: FieldType =
+    FieldType::Prim(PrimType::Unsigned(Expr::Int(128)));
+pub const S128: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(128)));
+pub const F32: FieldType =
+    FieldType::Prim(PrimType::Float(Expr::Int(8), Expr::Int(23)));
+pub const F64: FieldType =
+    FieldType::Prim(PrimType::Float(Expr::Int(11), Expr::Int(52)));
 
 /* Expressions */
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Expr {
     Int(i64),
     Identifier(sym::Sym),
@@ -82,14 +85,14 @@ pub enum Expr {
     Unary(Box<UnOp>),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BinOp {
     pub left: Expr,
     pub right: Expr,
     pub kind: BinOpKind,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum BinOpKind {
     Add,
     Sub,
@@ -103,13 +106,13 @@ pub enum BinOpKind {
     Shr,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct UnOp {
     pub expr: Expr,
     pub kind: UnOpKind,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum UnOpKind {
     Neg,
 }
