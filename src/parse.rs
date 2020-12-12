@@ -57,10 +57,7 @@ impl Parser {
     }
 
     fn eat(&mut self, stream: &mut TokenStream) -> PResult<Spacing> {
-        if stream.is_empty() {
-            self.pos = self.delim_span.1;
-            Err(self.err(UnexpectedCloseDelimOrEof))
-        } else {
+        if stream.not_empty() {
             let (tree, spacing) = stream.eat().unwrap();
 
             let pos = match &tree {
@@ -72,6 +69,9 @@ impl Parser {
             self.pos = pos;
 
             Ok(spacing)
+        } else {
+            self.pos = self.delim_span.1;
+            Err(self.err(UnexpectedCloseDelimOrEof))
         }
     }
 
@@ -122,8 +122,17 @@ impl Parser {
             }
             TokTree::Token(token) => Err(self.err_hint(
                 UnexpectedToken(token.kind),
-                "expected a delimiter",
+                "expected opening delimiter",
             )),
+        }
+    }
+
+    fn expect_eof(&mut self, stream: &TokenStream) -> PResult<()> {
+        match stream.peek() {
+            Some(_) => {
+                Err(self.err_hint(Unexpected, "expected closing delimiter"))
+            }
+            None => Ok(()),
         }
     }
 
@@ -133,7 +142,7 @@ impl Parser {
     ) -> PResult<ast::FileSpecification> {
         let mut structs = HashMap::new();
 
-        while !stream.is_empty() {
+        while stream.not_empty() {
             self.eat(stream)?;
             let kw = self.expect_keyword()?;
 
@@ -185,10 +194,10 @@ impl Parser {
     ) -> PResult<Vec<sym::Sym>> {
         let mut params = Vec::new();
 
-        if !stream.is_empty() {
+        if stream.not_empty() {
             self.eat(&mut stream)?;
             params.push(self.expect_ident()?);
-            while !stream.is_empty() {
+            while stream.not_empty() {
                 self.eat(&mut stream)?;
                 self.expect_kind(TokKind::Comma)?;
                 self.eat(&mut stream)?;
@@ -205,11 +214,8 @@ impl Parser {
     ) -> PResult<Vec<ast::Expr>> {
         let mut params = Vec::new();
 
-        while !stream.is_empty() {
-            let param_stream = stream.eat_while_token(&mut |k| match k {
-                &TokKind::Comma => false,
-                _ => true,
-            });
+        while stream.not_empty() {
+            let param_stream = stream.eat_until(&TokKind::Comma);
             self.eat(&mut stream)?; // comma
             params.push(self.parse_expr(param_stream)?);
         }
@@ -223,16 +229,11 @@ impl Parser {
     ) -> PResult<Vec<ast::Field>> {
         let mut fields = Vec::new();
 
-        loop {
-            if stream.is_empty() {
-                break;
+        while stream.not_empty() {
+            let field_stream = stream.eat_until(&TokKind::Comma);
+            if stream.not_empty() {
+                self.eat(&mut stream)?; // colon, trailing is optional
             }
-
-            let field_stream = stream.eat_while_token(&mut |k| match k {
-                &TokKind::SemiColon => false,
-                _ => true,
-            });
-            self.eat(&mut stream)?; // semicolon
 
             fields.push(self.parse_struct_field(field_stream)?);
         }
@@ -247,11 +248,14 @@ impl Parser {
         let ty = self.parse_field_type(&mut stream)?;
         let id = self.parse_field_ident(&mut stream)?;
         let constraint = match stream.peek() {
-            Some(TokTree::Token(Token { kind: TokKind::Tilde, .. })) => {
+            Some(TokTree::Token(Token {
+                kind: TokKind::Tilde,
+                ..
+            })) => {
                 self.eat(&mut stream)?; // tilde
                 Some(self.parse_field_constraint(stream)?)
             }
-            _ => None
+            _ => None,
         };
         Ok(ast::Field {
             start: ast::Addr::Relative(ast::Expr::Int(0)),
@@ -265,9 +269,7 @@ impl Parser {
         &mut self,
         stream: &mut TokenStream,
     ) -> PResult<ast::FieldType> {
-        let tree = stream.peek();
-
-        match tree {
+        match stream.peek() {
             Some(TokTree::Token(Token {
                 kind: TokKind::Ident(_),
                 ..
@@ -316,19 +318,81 @@ impl Parser {
                 Ok(fty)
             }
             Some(TokTree::Delim(DelimNode { delim: Bracket, .. })) => {
-                self.parse_array_type(stream)
+                self.eat(stream)?;
+                let dn = self.expect_delim()?;
+                self.parse_array_type(dn.stream)
             }
             _ => Err(self.err(Unexpected)),
         }
+    }
+
+    // array -> [ <field_type> ; <array_size> ]
+    // array_size -> ? | * | + | <expr> | {<expr,} | {<expr>, <expr>} | <null>
+    fn parse_array_type(
+        &mut self,
+        mut stream: TokenStream,
+    ) -> PResult<ast::FieldType> {
+        let mut type_stream = stream.eat_until(&TokKind::SemiColon);
+        let element_type = self.parse_field_type(&mut type_stream)?;
+        if stream.not_empty() {
+            self.eat(&mut stream)?; // semicolon, optional if no specified size
+        }
+        self.expect_eof(&type_stream)?;
+
+        let arr_size = match stream.peek_all()[..] {
+            [&TokTree::Token(Token {
+                kind: TokKind::Question,
+                ..
+            })] => {
+                ast::ArraySize::Within(ast::Expr::Int(0), ast::Expr::Int(1))
+            }
+            [&TokTree::Token(Token {
+                kind: TokKind::Plus,
+                ..
+            })] => ast::ArraySize::AtLeast(ast::Expr::Int(1)),
+            [&TokTree::Token(Token {
+                kind: TokKind::Star,
+                ..
+            })]
+            | [] => ast::ArraySize::AtLeast(ast::Expr::Int(0)),
+            _ => {
+                match stream.peek() {
+                    Some(TokTree::Delim(DelimNode {
+                        delim: Brace, ..
+                    })) => {
+                        self.eat(&mut stream)?;
+                        let dn = self.expect_delim()?;
+                        let mut bounds_stream = dn.stream;
+
+                        let lb_stream =
+                            bounds_stream.eat_until(&TokKind::Comma);
+                        let lower_bound = self.parse_expr(lb_stream)?;
+                        self.eat(&mut stream)?; // comma
+
+                        if bounds_stream.not_empty() {
+                            ast::ArraySize::AtLeast(lower_bound)
+                        } else {
+                            let upper_bound =
+                                self.parse_expr(bounds_stream)?;
+                            ast::ArraySize::Within(lower_bound, upper_bound)
+                        }
+                    }
+                    _ => {
+                        let size = self.parse_expr(stream)?;
+                        ast::ArraySize::Exactly(size)
+                    }
+                }
+            }
+        };
+
+        Ok(ast::FieldType::Array(Box::new(element_type), arr_size))
     }
 
     fn parse_field_ident(
         &mut self,
         stream: &mut TokenStream,
     ) -> PResult<Option<sym::Sym>> {
-        let tree = stream.peek();
-
-        match tree {
+        match stream.peek() {
             Some(TokTree::Token(Token {
                 kind: TokKind::Ident(_),
                 ..
@@ -339,13 +403,6 @@ impl Parser {
             }
             _ => Ok(None),
         }
-    }
-
-    fn parse_array_type(
-        &mut self,
-        stream: &mut TokenStream,
-    ) -> PResult<ast::FieldType> {
-        unimplemented!()
     }
 
     fn parse_field_constraint(

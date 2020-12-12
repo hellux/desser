@@ -38,6 +38,10 @@ impl TokenStream {
         }
     }
 
+    pub fn peek_all(&self) -> Vec<&TokTree> {
+        self.0.iter().map(|(tr, sp)| tr).collect()
+    }
+
     pub fn eat(&mut self) -> Option<TreeAndSpace> {
         if self.0.is_empty() {
             None
@@ -63,8 +67,12 @@ impl TokenStream {
         TokenStream(taken)
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+    pub fn eat_until(&mut self, kind: &TokKind) -> Self {
+        self.eat_while_token(&mut |k| k != kind)
+    }
+
+    pub fn not_empty(&self) -> bool {
+        !self.0.is_empty()
     }
 }
 
