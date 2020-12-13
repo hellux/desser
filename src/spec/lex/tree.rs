@@ -1,5 +1,6 @@
+use crate::spec::error::{Error, Span};
 use crate::spec::lex::cook::{Delim, TokKind, Token, TokenCooker};
-use crate::spec::lex::{LError, LErrorKind, LResult, Spacing, Span};
+use crate::spec::lex::{LError, LErrorKind, LResult, Spacing};
 use crate::sym;
 
 #[derive(Debug, Clone)]
@@ -89,7 +90,7 @@ struct TokTreesReader<'a> {
 pub fn parse_token_trees<'a>(
     symtab: sym::SymbolTable,
     src: &'a str,
-) -> (LResult<TokenStream>, sym::SymbolTable, Vec<LError>) {
+) -> (Result<TokenStream, Error>, sym::SymbolTable, Vec<Error>) {
     let mut ttr = TokTreesReader {
         cooker: TokenCooker::new(symtab, src),
         token: Token::dummy(),
@@ -100,7 +101,11 @@ pub fn parse_token_trees<'a>(
     let cooker = ttr.consume();
     let (symtab, errors) = cooker.consume();
 
-    (stream, symtab, errors)
+    (
+        stream.map_err(|le| le.into()),
+        symtab,
+        errors.into_iter().map(|le| le.into()).collect(),
+    )
 }
 
 impl<'a> TokTreesReader<'a> {

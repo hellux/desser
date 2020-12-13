@@ -15,6 +15,9 @@ mod cook;
 mod raw;
 mod tree;
 
+use self::LErrorKind::*;
+use crate::spec::error::{Error, Span};
+
 pub use cook::{Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{
     parse_token_trees, DelimNode, TokTree, TokenStream, TreeAndSpace,
@@ -26,17 +29,8 @@ pub enum Spacing {
     Alone,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct Span(pub u32, pub u32);
-
-impl Span {
-    pub fn new(lo: usize, hi: usize) -> Self {
-        Span(lo as u32, hi as u32)
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
-pub enum LErrorKind {
+pub(in crate::spec::lex) enum LErrorKind {
     UnclosedBlockComment,
     UnclosedCharLiteral,
     UnclosedStrLiteral,
@@ -49,12 +43,38 @@ pub enum LErrorKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct LError {
+pub(in crate::spec::lex) struct LError {
     kind: LErrorKind,
     span: Span,
 }
 
-pub type LResult<T> = Result<T, LError>;
+pub(in crate::spec::lex) type LResult<T> = Result<T, LError>;
+
+impl From<LError> for Error {
+    fn from(l: LError) -> Self {
+        let start = l.span.0;
+        let end = Some(l.span.1);
+        let desc = match l.kind {
+            UnclosedBlockComment => format!("block comment reached end of file without being closed"),
+            UnclosedCharLiteral => format!("char literal was never closed"),
+            UnclosedStrLiteral => format!("string literal was never closed"),
+            UnexpectedCloseDelim => format!("this closing delimiter was not expected"),
+            UnclosedDelim => format!("reached end of file without closing a delimiter"),
+            UnmatchedDelim => format!("closing delimiter does not match the latest unclosed opening delimiter"),
+            InvalidIntLiteral => format!("integer literal is invalid"),
+            InvalidCharLiteral => format!("char literal is invalid"),
+            UnknownToken => format!("unrecognized token"),
+        };
+        let hint = None;
+
+        Error {
+            start,
+            end,
+            desc,
+            hint,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests;

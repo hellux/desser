@@ -1,5 +1,6 @@
+use crate::spec::error::Span;
 use crate::spec::lex::raw;
-use crate::spec::lex::{LError, LErrorKind, Spacing, Span};
+use crate::spec::lex::{LError, LErrorKind, Spacing};
 use crate::sym;
 
 use self::TokKind::*;
@@ -93,7 +94,7 @@ pub enum LitKind {
 }
 
 #[derive(Clone, Debug)]
-pub struct TokenCooker<'a> {
+pub(super) struct TokenCooker<'a> {
     symtab: sym::SymbolTable,
     pos: usize,
     src: &'a str,

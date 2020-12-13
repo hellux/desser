@@ -1,49 +1,96 @@
 use std::collections::HashMap;
 
 use crate::spec::ast;
+use crate::spec::error::{Error, Span};
 use crate::spec::lex::Delim::{Brace, Bracket, Paren};
+use crate::spec::lex::Spacing::{Alone, Joint};
 use crate::spec::lex::{
-    Delim, DelimNode, Keyword, LitKind, Spacing, Span, TokKind, TokTree,
-    Token, TokenStream,
+    Delim, DelimNode, Keyword, LitKind, Spacing, TokKind, TokTree, Token,
+    TokenStream,
 };
 use crate::sym;
 
 use self::PErrorKind::*;
 
 #[derive(Clone, Debug)]
-pub enum PErrorKind {
+enum PErrorKind {
     Unexpected,
     UnexpectedToken(TokKind),
     UnexpectedOpenDelim(Delim),
     UnexpectedCloseDelimOrEof,
+    InvalidSpacing(Spacing),
 }
 
 #[derive(Clone, Debug)]
-pub struct PError {
-    pub kind: PErrorKind,
-    pub pos: u32,
-    pub hint: Option<&'static str>,
+struct PError {
+    kind: PErrorKind,
+    pos: u32,
+    hint: Option<&'static str>,
 }
 
 type PResult<T> = Result<T, PError>;
 
+impl From<PError> for Error {
+    fn from(p: PError) -> Self {
+        let start = p.pos;
+        let end = None;
+        let desc = match p.kind {
+            Unexpected => format!("unexpected token or delimiter"),
+            UnexpectedToken(token) => {
+                format!("unexpected token -- {:?}", token)
+            }
+            UnexpectedOpenDelim(delim) => {
+                format!("unexpected opening delimiter -- {:?}", delim)
+            }
+            UnexpectedCloseDelimOrEof => {
+                format!("unexpected closing delimiter")
+            }
+            InvalidSpacing(actual) => match actual {
+                Joint => format!("there cannot be whitespace here"),
+                Alone => format!("there has to be whitespace here"),
+            },
+        };
+        let hint = p.hint;
+
+        Error {
+            start,
+            end,
+            desc,
+            hint,
+        }
+    }
+}
+
 pub fn parse_file_spec(
     symtab: sym::SymbolTable,
     mut tokens: TokenStream,
-) -> (PResult<ast::FileSpecification>, sym::SymbolTable) {
+) -> (
+    Result<ast::FileSpecification, Error>,
+    sym::SymbolTable,
+    Vec<Error>,
+) {
     let mut parser = Parser::new(symtab);
 
     let file_spec = parser.parse_spec(&mut tokens);
-    let symtab = parser.consume();
+    let (symtab, errors) = parser.consume();
 
-    (file_spec, symtab)
+    (
+        file_spec.map_err(|pe| pe.into()),
+        symtab,
+        errors.into_iter().map(|pe| pe.into()).collect(),
+    )
 }
 
 struct Parser {
     symtab: sym::SymbolTable,
+
     tree: TokTree,
+    spacing: Spacing,
     pos: u32,
+
     delim_span: Span,
+
+    errors: Vec<PError>,
 }
 
 impl Parser {
@@ -51,12 +98,14 @@ impl Parser {
         Parser {
             symtab,
             tree: TokTree::Token(Token::dummy()),
+            spacing: Joint,
             pos: 0,
             delim_span: Span(0, 0),
+            errors: Vec::new(),
         }
     }
 
-    fn eat(&mut self, stream: &mut TokenStream) -> PResult<Spacing> {
+    fn eat(&mut self, stream: &mut TokenStream) -> PResult<()> {
         if stream.not_empty() {
             let (tree, spacing) = stream.eat().unwrap();
 
@@ -66,9 +115,10 @@ impl Parser {
             };
 
             self.tree = tree;
+            self.spacing = spacing;
             self.pos = pos;
 
-            Ok(spacing)
+            Ok(())
         } else {
             self.pos = self.delim_span.1;
             Err(self.err(UnexpectedCloseDelimOrEof))
@@ -127,13 +177,17 @@ impl Parser {
         }
     }
 
-    fn expect_eof(&mut self, stream: &TokenStream) -> PResult<()> {
+    fn assert_spacing(&mut self, spacing: Spacing, hint: &'static str) {
+        if self.spacing != spacing {
+            self.errors
+                .push(self.err_hint(InvalidSpacing(self.spacing), hint));
+        }
+    }
+
+    fn assert_eof(&mut self, stream: &TokenStream, hint: &'static str) {
         match stream.peek() {
-            Some(_) => {
-                Err(self
-                    .err_hint(Unexpected, "expected closing delimiter or eof"))
-            }
-            None => Ok(()),
+            Some(_) => self.errors.push(self.err_hint(Unexpected, hint)),
+            None => {}
         }
     }
 
@@ -251,15 +305,20 @@ impl Parser {
         let ty = self.parse_field_type(&mut stream)?;
         let id = self.parse_field_ident(&mut stream)?;
         let constraint = match stream.peek() {
-            Some(TokTree::Token(Token {
-                kind: TokKind::Tilde,
-                ..
-            })) => {
+            Some(TokTree::Token(token)) if token.kind == TokKind::Tilde => {
                 self.eat(&mut stream)?; // tilde
                 Some(self.parse_field_constraint(stream)?)
             }
+            Some(_) => {
+                self.eat(&mut stream)?;
+                return Err(self.err_hint(
+                    Unexpected,
+                    "expected constraint or comma after field declaration",
+                ));
+            }
             _ => None,
         };
+
         Ok(ast::Field {
             start: ast::Addr::Relative(ast::Expr::Int(0)),
             ty,
@@ -338,7 +397,7 @@ impl Parser {
         if stream.not_empty() {
             self.eat(&mut stream)?; // semicolon, optional if no specified size
         }
-        self.expect_eof(&type_stream)?;
+        self.assert_eof(&type_stream, "unexpected token after array type");
 
         let arr_size = match stream.peek_all()[..] {
             [&TokTree::Token(Token {
@@ -413,7 +472,7 @@ impl Parser {
 
     fn parse_expr(&mut self, mut stream: TokenStream) -> PResult<ast::Expr> {
         let expr = self.parse_expr_fix(&mut stream, 0)?;
-        self.expect_eof(&stream)?;
+        self.assert_eof(&stream, "unexpected token after expression");
         Ok(expr)
     }
 
@@ -433,7 +492,9 @@ impl Parser {
                             TokTree::Token(token)
                                 if token.kind == TokKind::Dot =>
                             {
+                                self.assert_spacing(Joint, "member access dot may not be preceded by space");
                                 self.eat(stream)?; // dot
+                                self.assert_spacing(Joint, "member access dot may not be followed by space");
                                 self.eat(stream)?;
                                 let id = self.expect_ident()?;
                                 ids.push(id);
@@ -527,7 +588,7 @@ impl Parser {
         }
     }
 
-    fn consume(self) -> sym::SymbolTable {
-        self.symtab
+    fn consume(self) -> (sym::SymbolTable, Vec<PError>) {
+        (self.symtab, self.errors)
     }
 }
