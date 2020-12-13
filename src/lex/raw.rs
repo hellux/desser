@@ -22,19 +22,28 @@ pub enum TokenKind {
     Literal(LiteralKind),
     Ident,
 
-    Dollar,
-    Eq,
-    Lt,
-    Gt,
-    And,
-    Or,
     Minus,
     Plus,
     Star,
+    Exclamation,
     Question,
     Slash,
     Caret,
     Tilde,
+    Percentage,
+
+    Lt,
+    Gt,
+    Ampersand,
+    Pipe,
+
+    Eq2,
+    Lt2,
+    Gt2,
+    Ampersand2,
+    Pipe2,
+    Leq,
+    Geq,
 
     Unknown,
 }
@@ -146,7 +155,50 @@ impl Cursor<'_> {
 
             c @ '0'..='9' => self.number(c),
 
-            '$' => Dollar,
+            '=' => match self.peek() {
+                '=' => {
+                    self.eat();
+                    Eq2
+                }
+                _ => Unknown,
+            },
+            '<' => match self.peek() {
+                '<' => {
+                    self.eat();
+                    Lt2
+                }
+                '=' => {
+                    self.eat();
+                    Leq
+                }
+                _ => Lt,
+            },
+            '>' => match self.peek() {
+                '>' => {
+                    self.eat();
+                    Gt2
+                }
+                '=' => {
+                    self.eat();
+                    Geq
+                }
+                _ => Gt,
+            },
+            '&' => match self.peek() {
+                '&' => {
+                    self.eat();
+                    Ampersand2
+                }
+                _ => Ampersand,
+            },
+            '|' => match self.peek() {
+                '|' => {
+                    self.eat();
+                    Pipe2
+                }
+                _ => Pipe,
+            },
+
             ';' => SemiColon,
             ',' => Comma,
             '.' => Dot,
@@ -156,17 +208,14 @@ impl Cursor<'_> {
             '}' => CloseBrace,
             '[' => OpenBracket,
             ']' => CloseBracket,
+            '!' => Exclamation,
             '?' => Question,
-            '=' => Eq,
-            '<' => Lt,
-            '>' => Gt,
             '-' => Minus,
-            '&' => And,
-            '|' => Or,
             '+' => Plus,
             '*' => Star,
             '^' => Caret,
             '~' => Tilde,
+            '%' => Percentage,
 
             _ => Unknown,
         };

@@ -33,24 +33,34 @@ pub enum TokKind {
     CloseDelim(Delim),
     SemiColon,
     Comma,
-    Dot,
 
     Literal(LitKind),
     Keyword(Keyword),
     Ident(sym::Sym),
 
-    Eq,
+    Dot,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percentage,
+    Caret,
+    Question,
+    Tilde,
+    Not,
+
     Lt,
     Gt,
-    And,
-    Or,
-    Minus,
-    Plus,
-    Star,
-    Question,
-    Slash,
-    Caret,
-    Tilde,
+    Ampersand,
+    Pipe,
+
+    Eq2,
+    Lt2,
+    Gt2,
+    Ampersand2,
+    Pipe2,
+    Leq,
+    Geq,
 
     Unknown,
     Eof,
@@ -70,7 +80,7 @@ pub enum Keyword {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Lit {
+pub struct Lit {
     pub kind: LitKind,
     pub symbol: sym::Sym,
 }
@@ -179,20 +189,29 @@ impl<'a> TokenCooker<'a> {
             }
             raw::TokenKind::Ident => Some(self.cook_ident(start)),
 
-            raw::TokenKind::Eq => Some(Eq),
             raw::TokenKind::Lt => Some(Lt),
             raw::TokenKind::Gt => Some(Gt),
-            raw::TokenKind::And => Some(And),
-            raw::TokenKind::Or => Some(Or),
+            raw::TokenKind::Ampersand => Some(Ampersand),
+            raw::TokenKind::Pipe => Some(Pipe),
+
+            raw::TokenKind::Eq2 => Some(Eq2),
+            raw::TokenKind::Lt2 => Some(Lt2),
+            raw::TokenKind::Gt2 => Some(Gt2),
+            raw::TokenKind::Ampersand2 => Some(Ampersand2),
+            raw::TokenKind::Pipe2 => Some(Pipe2),
+            raw::TokenKind::Leq => Some(Leq),
+            raw::TokenKind::Geq => Some(Geq),
+
             raw::TokenKind::Minus => Some(Minus),
             raw::TokenKind::Plus => Some(Plus),
             raw::TokenKind::Star => Some(Star),
+            raw::TokenKind::Percentage => Some(Percentage),
+            raw::TokenKind::Exclamation => Some(Not),
             raw::TokenKind::Question => Some(Question),
             raw::TokenKind::Slash => Some(Slash),
             raw::TokenKind::Caret => Some(Caret),
             raw::TokenKind::Tilde => Some(Tilde),
 
-            raw::TokenKind::Dollar => None,
             raw::TokenKind::Unknown => {
                 self.err(LErrorKind::UnknownToken, start);
                 Some(Unknown)

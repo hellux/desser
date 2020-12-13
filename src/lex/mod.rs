@@ -15,7 +15,7 @@ mod cook;
 mod raw;
 mod tree;
 
-pub use cook::{Delim, Keyword, TokKind, Token};
+pub use cook::{Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{
     parse_token_trees, DelimNode, TokTree, TokenStream, TreeAndSpace,
 };

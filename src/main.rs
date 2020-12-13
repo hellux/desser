@@ -86,7 +86,7 @@ fn main() -> Result<(), std::io::Error> {
     println!("{:?}", b);
     */
 
-    let src = "def root { u32 $version; bitvector(5) $vec; } ";
+    let src = "def root { u32 version, bitvector((version+2)*2 % 3) vec } ";
     let symtab = sym::SymbolTable::new();
     let (stream, symtab, errors) = lex::parse_token_trees(symtab, src);
 

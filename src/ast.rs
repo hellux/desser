@@ -80,16 +80,16 @@ pub const F64: FieldType =
 #[derive(Clone, Debug)]
 pub enum Expr {
     Int(i64),
-    Identifier(sym::Sym),
+    Ident(Vec<sym::Sym>),
     Binary(Box<BinOp>),
     Unary(Box<UnOp>),
 }
 
 #[derive(Clone, Debug)]
 pub struct BinOp {
-    pub left: Expr,
-    pub right: Expr,
     pub kind: BinOpKind,
+    pub lhs: Expr,
+    pub rhs: Expr,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,4 +115,25 @@ pub struct UnOp {
 #[derive(Clone, Copy, Debug)]
 pub enum UnOpKind {
     Neg,
+}
+
+impl BinOpKind {
+    pub fn fixity(&self) -> (u8, u8) {
+        match self {
+            BinOpKind::Mul | BinOpKind::Div | BinOpKind::Rem => (11, 12),
+            BinOpKind::Add | BinOpKind::Sub => (9, 10),
+            BinOpKind::Shl | BinOpKind::Shr => (7, 8),
+            BinOpKind::BitAnd => (5, 6),
+            BinOpKind::BitXor => (3, 4),
+            BinOpKind::BitOr => (1, 2),
+        }
+    }
+}
+
+impl UnOpKind {
+    pub fn fixity(&self) -> u8 {
+        match self {
+            UnOpKind::Neg => 13,
+        }
+    }
 }

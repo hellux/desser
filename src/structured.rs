@@ -76,10 +76,10 @@ impl<R: BufRead + Seek> FileParser<R> {
     pub fn eval(&self, expr: &ast::Expr, ns: &sym::Namespace) -> PResult<i64> {
         match expr {
             ast::Expr::Int(val) => Ok(*val),
-            ast::Expr::Identifier(id) => self.eval_id(id, ns),
+            ast::Expr::Ident(id) => self.eval_id(id, ns),
             ast::Expr::Binary(binop) => {
-                let left = self.eval(&binop.left, ns)?;
-                let right = self.eval(&binop.right, ns)?;
+                let left = self.eval(&binop.lhs, ns)?;
+                let right = self.eval(&binop.rhs, ns)?;
                 println!("{}, {}", left, right);
                 Ok(match binop.kind {
                     ast::BinOpKind::Add => left + right,
@@ -103,7 +103,13 @@ impl<R: BufRead + Seek> FileParser<R> {
         }
     }
 
-    fn eval_id(&self, id: &sym::Sym, ns: &sym::Namespace) -> PResult<i64> {
+    fn eval_id(
+        &self,
+        id: &Vec<sym::Sym>,
+        ns: &sym::Namespace,
+    ) -> PResult<i64> {
+        unimplemented!()
+        /*
         if let Some(val) = ns.get(id) {
             Ok(*val)
         } else if let Some(val) = self.dsr.constants.get(id) {
@@ -111,6 +117,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         } else {
             Err(PError::VariableNotInScope)
         }
+        */
     }
 
     fn parse_value(

@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use crate::ast;
 use crate::lex::Delim::*;
 use crate::lex::{
-    Delim, DelimNode, Keyword, Spacing, Span, TokKind, TokTree, Token,
-    TokenStream,
+    Delim, DelimNode, Keyword, LitKind, Spacing, Span, TokKind, TokTree,
+    Token, TokenStream,
 };
 use crate::sym;
 
@@ -62,7 +62,7 @@ impl Parser {
 
             let pos = match &tree {
                 TokTree::Token(token) => token.span.0,
-                TokTree::Delim(DelimNode { span, .. }) => span.0,
+                TokTree::Delim(dn) => dn.span.0,
             };
 
             self.tree = tree;
@@ -130,7 +130,8 @@ impl Parser {
     fn expect_eof(&mut self, stream: &TokenStream) -> PResult<()> {
         match stream.peek() {
             Some(_) => {
-                Err(self.err_hint(Unexpected, "expected closing delimiter"))
+                Err(self
+                    .err_hint(Unexpected, "expected closing delimiter or eof"))
             }
             None => Ok(()),
         }
@@ -216,7 +217,9 @@ impl Parser {
 
         while stream.not_empty() {
             let param_stream = stream.eat_until(&TokKind::Comma);
-            self.eat(&mut stream)?; // comma
+            if stream.not_empty() {
+                self.eat(&mut stream)?; // comma, optional if trailing
+            }
             params.push(self.parse_expr(param_stream)?);
         }
 
@@ -232,7 +235,7 @@ impl Parser {
         while stream.not_empty() {
             let field_stream = stream.eat_until(&TokKind::Comma);
             if stream.not_empty() {
-                self.eat(&mut stream)?; // colon, trailing is optional
+                self.eat(&mut stream)?; // comma, trailing is optional
             }
 
             fields.push(self.parse_struct_field(field_stream)?);
@@ -277,9 +280,7 @@ impl Parser {
                 self.eat(stream)?;
                 let id = self.expect_ident()?;
                 let params = match stream.peek() {
-                    Some(TokTree::Delim(DelimNode {
-                        delim: Paren, ..
-                    })) => {
+                    Some(TokTree::Delim(dn)) if dn.delim == Paren => {
                         self.eat(stream)?;
                         let dn = self.expect_delim()?;
                         self.parse_actual_params(dn.stream)?
@@ -317,7 +318,7 @@ impl Parser {
 
                 Ok(fty)
             }
-            Some(TokTree::Delim(DelimNode { delim: Bracket, .. })) => {
+            Some(TokTree::Delim(dn)) if dn.delim == Bracket => {
                 self.eat(stream)?;
                 let dn = self.expect_delim()?;
                 self.parse_array_type(dn.stream)
@@ -326,8 +327,8 @@ impl Parser {
         }
     }
 
-    // array -> [ <field_type> ; <array_size> ]
-    // array_size -> ? | * | + | <expr> | {<expr,} | {<expr>, <expr>} | <null>
+    // array ::- [<field_type>; <array_size>]
+    // array_size ::- ? | * | + | <expr> | {<expr,} | {<expr>, <expr>} | <null>
     fn parse_array_type(
         &mut self,
         mut stream: TokenStream,
@@ -357,9 +358,7 @@ impl Parser {
             | [] => ast::ArraySize::AtLeast(ast::Expr::Int(0)),
             _ => {
                 match stream.peek() {
-                    Some(TokTree::Delim(DelimNode {
-                        delim: Brace, ..
-                    })) => {
+                    Some(TokTree::Delim(dn)) if dn.delim == Brace => {
                         self.eat(&mut stream)?;
                         let dn = self.expect_delim()?;
                         let mut bounds_stream = dn.stream;
@@ -412,8 +411,104 @@ impl Parser {
         unimplemented!()
     }
 
-    fn parse_expr(&mut self, stream: TokenStream) -> PResult<ast::Expr> {
-        unimplemented!()
+    fn parse_expr(&mut self, mut stream: TokenStream) -> PResult<ast::Expr> {
+        let expr = self.parse_expr_fix(&mut stream, 0)?;
+        self.expect_eof(&stream)?;
+        Ok(expr)
+    }
+
+    fn parse_expr_fix(
+        &mut self,
+        stream: &mut TokenStream,
+        min_fixity: u8,
+    ) -> PResult<ast::Expr> {
+        self.eat(stream)?;
+        let mut lhs = match self.tree.take() {
+            TokTree::Token(token) => match token.kind {
+                TokKind::Literal(LitKind::Int(val)) => ast::Expr::Int(val),
+                TokKind::Ident(id) => {
+                    let mut ids = vec![id];
+                    while stream.not_empty() {
+                        match stream.peek().unwrap() {
+                            TokTree::Token(token)
+                                if token.kind == TokKind::Dot =>
+                            {
+                                self.eat(stream)?; // dot
+                                self.eat(stream)?;
+                                let id = self.expect_ident()?;
+                                ids.push(id);
+                            }
+                            _ => break,
+                        }
+                    }
+                    ast::Expr::Ident(ids)
+                }
+                TokKind::Minus => {
+                    let op = ast::UnOpKind::Neg;
+                    let expr = self.parse_expr_fix(stream, op.fixity())?;
+                    ast::Expr::Unary(Box::new(ast::UnOp {
+                        expr,
+                        kind: ast::UnOpKind::Neg,
+                    }))
+                }
+                _ => {
+                    return Err(self.err_hint(
+                        UnexpectedToken(token.kind),
+                        "expected literal, identifier or unary op on lhs",
+                    ))
+                }
+            },
+            TokTree::Delim(dn) if dn.delim == Paren => {
+                self.parse_expr(dn.stream)?
+            }
+            TokTree::Delim(dn) => {
+                return Err(self.err_hint(
+                    UnexpectedOpenDelim(dn.delim),
+                    "expression may not contain delimiters except parenthesis",
+                ));
+            }
+        };
+
+        while stream.not_empty() {
+            match stream.peek().unwrap() {
+                TokTree::Token(token) => {
+                    let kind = match token.kind {
+                        TokKind::Plus => ast::BinOpKind::Add,
+                        TokKind::Minus => ast::BinOpKind::Sub,
+                        TokKind::Star => ast::BinOpKind::Mul,
+                        TokKind::Slash => ast::BinOpKind::Div,
+                        TokKind::Percentage => ast::BinOpKind::Rem,
+                        TokKind::Ampersand => ast::BinOpKind::BitAnd,
+                        TokKind::Pipe => ast::BinOpKind::BitOr,
+                        TokKind::Lt2 => ast::BinOpKind::Shl,
+                        TokKind::Gt2 => ast::BinOpKind::Shr,
+                        _ => {
+                            return Err(self.err_hint(
+                                UnexpectedToken(token.kind.clone()),
+                                "expected binary operator",
+                            ));
+                        }
+                    };
+
+                    let (lfix, rfix) = kind.fixity();
+                    if lfix < min_fixity {
+                        break;
+                    }
+
+                    self.eat(stream)?; // bin op
+                    let rhs = self.parse_expr_fix(stream, rfix)?;
+                    let binop = ast::BinOp { lhs, rhs, kind };
+                    lhs = ast::Expr::Binary(Box::new(binop));
+                }
+                _ => {
+                    return Err(
+                        self.err_hint(Unexpected, "expected binary operator")
+                    );
+                }
+            }
+        }
+
+        Ok(lhs)
     }
 
     fn err(&self, kind: PErrorKind) -> PError {

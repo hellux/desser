@@ -56,12 +56,17 @@ impl TokenStream {
     {
         let mut taken = Vec::new();
 
-        while let Some(TokTree::Token(token)) = self.peek() {
-            if pred(&token.kind) {
-                taken.push(self.eat().unwrap());
-            } else {
-                break;
+        loop {
+            match self.peek() {
+                Some(TokTree::Token(token)) => {
+                    if !pred(&token.kind) {
+                        break;
+                    }
+                }
+                None => break,
+                _ => {}
             }
+            taken.push(self.eat().unwrap());
         }
 
         TokenStream(taken)
