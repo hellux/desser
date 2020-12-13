@@ -1,5 +1,5 @@
-use crate::lex::raw;
-use crate::lex::{LError, LErrorKind, Spacing, Span};
+use crate::spec::lex::raw;
+use crate::spec::lex::{LError, LErrorKind, Spacing, Span};
 use crate::sym;
 
 use self::TokKind::*;

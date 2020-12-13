@@ -1,5 +1,5 @@
-use crate::lex::cook::{Delim, TokKind, Token, TokenCooker};
-use crate::lex::{LError, LErrorKind, LResult, Spacing, Span};
+use crate::spec::lex::cook::{Delim, TokKind, Token, TokenCooker};
+use crate::spec::lex::{LError, LErrorKind, LResult, Spacing, Span};
 use crate::sym;
 
 #[derive(Debug, Clone)]

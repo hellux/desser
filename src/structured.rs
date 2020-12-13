@@ -1,8 +1,7 @@
 use std::io::{BufRead, Error, ErrorKind, Seek, SeekFrom};
 
-use crate::ast;
+use crate::spec::ast;
 use crate::sym;
-use crate::{PError, PResult};
 
 #[derive(Debug)]
 pub enum StructFieldKind {
@@ -33,17 +32,47 @@ pub struct StructuredFile {
 
 pub struct FileParser<R> {
     f: R,
-    dsr: ast::FileSpecification,
+    spec: ast::FileSpecification,
+    symtab: sym::SymbolTable,
     pos: u64,
     length: u64,
 }
 
+#[derive(Debug)]
+pub enum PError {
+    EndOfFile,
+    UnfulfilledConstraint,
+    ExcessData,
+    InvalidType,
+    VariableNotInScope,
+    IO(std::io::Error),
+}
+
+impl From<std::io::Error> for PError {
+    fn from(e: std::io::Error) -> Self {
+        PError::IO(e)
+    }
+}
+
+impl From<std::io::ErrorKind> for PError {
+    fn from(kind: std::io::ErrorKind) -> Self {
+        PError::from(std::io::Error::from(kind))
+    }
+}
+
+pub type PResult<T> = Result<T, PError>;
+
 impl<R: BufRead + Seek> FileParser<R> {
-    pub fn new(mut f: R, dsr: ast::FileSpecification) -> PResult<Self> {
+    pub fn new(
+        mut f: R,
+        spec: ast::FileSpecification,
+        symtab: sym::SymbolTable,
+    ) -> PResult<Self> {
         let length = f.seek(SeekFrom::End(0))? * 8;
         Ok(FileParser {
             f,
-            dsr: dsr.clone(),
+            symtab,
+            spec: spec.clone(),
             pos: 0,
             length,
         })
@@ -112,7 +141,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         /*
         if let Some(val) = ns.get(id) {
             Ok(*val)
-        } else if let Some(val) = self.dsr.constants.get(id) {
+        } else if let Some(val) = self.spec.constants.get(id) {
             Ok(*val)
         } else {
             Err(PError::VariableNotInScope)
@@ -175,7 +204,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         id: sym::Sym,
         params: &Vec<i64>,
     ) -> PResult<Struct> {
-        let spec = self.dsr.structs.get(&id).ok_or(Error::new(
+        let spec = self.spec.structs.get(&id).ok_or(Error::new(
             ErrorKind::NotFound,
             format!("Struct {} not declared.", id),
         ))?;

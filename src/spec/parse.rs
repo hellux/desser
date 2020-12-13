@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::ast;
-use crate::lex::Delim::*;
-use crate::lex::{
+use crate::spec::ast;
+use crate::spec::lex::Delim::{Brace, Bracket, Paren};
+use crate::spec::lex::{
     Delim, DelimNode, Keyword, LitKind, Spacing, Span, TokKind, TokTree,
     Token, TokenStream,
 };
