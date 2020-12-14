@@ -15,11 +15,7 @@ fn main() -> Result<(), std::io::Error> {
         let sf = spec::error::SpecFile::new(std::path::Path::new(&args[1]))?;
         println!("{:?}, {:?}", sf, sf.line_col(222));
 
-        let mut src = String::new();
-        let mut src_file = File::open(&args[1])?;
-        src_file.read_to_string(&mut src)?;
-
-        let spec_res = spec::parse_spec(&src);
+        let spec_res = spec::parse_spec(&sf);
         println!("{:?}", spec_res);
 
         if let Ok((spec, symtab)) = spec_res {

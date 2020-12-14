@@ -6,11 +6,11 @@ mod parse;
 use crate::sym;
 
 pub fn parse_spec(
-    src: &str,
+    sf: &error::SpecFile,
 ) -> Result<(ast::FileSpecification, sym::SymbolTable), ()> {
     let mut errors: Vec<error::Error> = Vec::new();
     let symtab = sym::SymbolTable::new();
-    let (stream_res, symtab, mut lerr) = lex::parse_token_trees(symtab, src);
+    let (stream_res, symtab, mut lerr) = lex::parse_token_trees(symtab, &sf.src);
     errors.append(&mut lerr);
     match stream_res {
         Ok(stream) => {
@@ -28,7 +28,7 @@ pub fn parse_spec(
     }
 
     for e in errors {
-        println!("{:?}", e)
+        e.display(sf);
     }
 
     Err(())

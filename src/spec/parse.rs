@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
+use crate::spec::error;
 use crate::spec::ast;
-use crate::spec::error::{Error, Span};
 use crate::spec::lex::Delim::{Brace, Bracket, Paren};
 use crate::spec::lex::Spacing::{Alone, Joint};
 use crate::spec::lex::{
@@ -30,7 +30,7 @@ struct PError {
 
 type PResult<T> = Result<T, PError>;
 
-impl From<PError> for Error {
+impl From<PError> for error::Error {
     fn from(p: PError) -> Self {
         let start = p.pos;
         let end = None;
@@ -52,11 +52,12 @@ impl From<PError> for Error {
         };
         let hint = p.hint;
 
-        Error {
+        error::Error {
             start,
             end,
             desc,
             hint,
+            ty: error::ErrorType::Parsing,
         }
     }
 }
@@ -65,9 +66,9 @@ pub fn parse_file_spec(
     symtab: sym::SymbolTable,
     mut tokens: TokenStream,
 ) -> (
-    Result<ast::FileSpecification, Error>,
+    Result<ast::FileSpecification, error::Error>,
     sym::SymbolTable,
-    Vec<Error>,
+    Vec<error::Error>,
 ) {
     let mut parser = Parser::new(symtab);
 
@@ -88,7 +89,7 @@ struct Parser {
     spacing: Spacing,
     pos: u32,
 
-    delim_span: Span,
+    delim_span: error::Span,
 
     errors: Vec<PError>,
 }
@@ -100,7 +101,7 @@ impl Parser {
             tree: TokTree::Token(Token::dummy()),
             spacing: Joint,
             pos: 0,
-            delim_span: Span(0, 0),
+            delim_span: error::Span(0, 0),
             errors: Vec::new(),
         }
     }

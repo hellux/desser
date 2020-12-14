@@ -6,12 +6,29 @@ pub struct Error {
     pub end: Option<u32>,
     pub desc: String,
     pub hint: Option<&'static str>,
+    pub ty: ErrorType,
+}
+
+impl Error {
+    pub fn display(&self, sf: &SpecFile) {
+        let (l0, c0) = sf.line_col(self.start);
+        eprint!("error: {}\n  --> {}:{}:{}\n", self.desc, sf.path, l0, c0);
+        if let Some(hint) = self.hint {
+            eprintln!("  hint: {}", hint);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ErrorType {
+    Lexical,
+    Parsing,
 }
 
 #[derive(Debug)]
 pub struct SpecFile {
     path: String,
-    src: String,
+    pub src: String,
     lines: Vec<u32>,
     length: u32,
 }
