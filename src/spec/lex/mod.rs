@@ -34,8 +34,8 @@ pub(in crate::spec::lex) enum LErrorKind {
     UnclosedBlockComment,
     UnclosedCharLiteral,
     UnclosedStrLiteral,
-    UnexpectedCloseDelim,
     UnclosedDelim,
+    UnexpectedCloseDelim,
     UnmatchedDelim,
     InvalidIntLiteral,
     InvalidCharLiteral,
@@ -55,12 +55,20 @@ impl From<LError> for Error {
         let start = l.span.0;
         let end = Some(l.span.1);
         let desc = match l.kind {
-            UnclosedBlockComment => format!("block comment reached end of file without being closed"),
+            UnclosedBlockComment => format!(
+                "block comment reached end of file without being closed"
+            ),
             UnclosedCharLiteral => format!("char literal was never closed"),
             UnclosedStrLiteral => format!("string literal was never closed"),
-            UnexpectedCloseDelim => format!("this closing delimiter was not expected"),
-            UnclosedDelim => format!("reached end of file without closing a delimiter"),
-            UnmatchedDelim => format!("closing delimiter does not match the latest unclosed opening delimiter"),
+            UnexpectedCloseDelim => {
+                format!("this closing delimiter was not expected")
+            }
+            UnclosedDelim => {
+                format!("reached end of file without closing a delimiter")
+            }
+            UnmatchedDelim => {
+                format!("closing delimiter does not match the latest opened")
+            }
             InvalidIntLiteral => format!("integer literal is invalid"),
             InvalidCharLiteral => format!("char literal is invalid"),
             UnknownToken => format!("unrecognized token"),

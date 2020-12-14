@@ -175,10 +175,19 @@ impl<'a> TokTreesReader<'a> {
         let mut trees = Vec::new();
 
         loop {
-            if let TokKind::CloseDelim(_) = self.token.kind {
-                return Ok(TokenStream(trees));
-            } else {
-                trees.push(self.parse_token_tree()?);
+            match self.token.kind {
+                TokKind::CloseDelim(_) => {
+                    return Ok(TokenStream(trees));
+                }
+                TokKind::Eof => {
+                    return Err(LError {
+                        kind: LErrorKind::UnclosedDelim,
+                        span: self.token.span,
+                    });
+                }
+                _ => {
+                    trees.push(self.parse_token_tree()?);
+                }
             }
         }
     }
