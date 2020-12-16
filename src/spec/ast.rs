@@ -18,7 +18,6 @@ pub struct Struct {
 
 #[derive(Clone, Debug)]
 pub struct Field {
-    pub start: Addr,
     pub ty: FieldType,
     pub id: Option<sym::Sym>,
     pub constraint: Option<Constraint>,
@@ -27,12 +26,6 @@ pub struct Field {
 #[derive(Clone, Debug)]
 pub enum Constraint {
     Const(Vec<u8>),
-}
-
-#[derive(Clone, Debug)]
-pub enum Addr {
-    Absolute(Expr),
-    Relative(Expr),
 }
 
 /* Field types */

@@ -120,34 +120,6 @@ fn lex_strings() {
 }
 
 #[test]
-fn lex_symbols() {
-    check_lexing(
-        "/;,.(){}[]?$=<>-&|+*^",
-        "Token { kind: Slash, len: 1 }
-         Token { kind: SemiColon, len: 1 }
-         Token { kind: Comma, len: 1 }
-         Token { kind: Dot, len: 1 }
-         Token { kind: OpenParen, len: 1 }
-         Token { kind: CloseParen, len: 1 }
-         Token { kind: OpenBrace, len: 1 }
-         Token { kind: CloseBrace, len: 1 }
-         Token { kind: OpenBracket, len: 1 }
-         Token { kind: CloseBracket, len: 1 }
-         Token { kind: Question, len: 1 }
-         Token { kind: Dollar, len: 1 }
-         Token { kind: Eq, len: 1 }
-         Token { kind: Lt, len: 1 }
-         Token { kind: Gt, len: 1 }
-         Token { kind: Minus, len: 1 }
-         Token { kind: And, len: 1 }
-         Token { kind: Or, len: 1 }
-         Token { kind: Plus, len: 1 }
-         Token { kind: Star, len: 1 }
-         Token { kind: Caret, len: 1 }",
-    );
-}
-
-#[test]
 fn cook_integers() {
     check_cooking("0xff", "Literal(Int(255)) Eof");
     check_cooking("0x", "Literal(Int(0)) Eof");
@@ -158,9 +130,9 @@ fn cook_structs() {
     check_cooking(
         r#"
     def psf2_header {
-        [u8; 4] $magic ~ "head",
-        u32 $version ~ <= 0,
-        until $headersize ignore,
+        [u8; 4] magic ~ "head",
+        u32 version ~ <= 0,
+        until headersize ignore,
     }"#,
         "
         Keyword(Def)
@@ -174,16 +146,18 @@ fn cook_structs() {
         Ident(2)
         Tilde
         Literal(Str([104,101,97,100]))
-        CommaIdent(3)
+        Comma
+        Ident(3)
         Ident(4)
         Tilde
-        Lt
-        Eq
+        Leq
         Literal(Int(0))
-        CommaIdent(5)
+        Comma
+        Ident(5)
         Ident(6)
         Ident(7)
-        CommaCloseDelim(Brace)
+        Comma
+        CloseDelim(Brace)
         Eof",
     );
 }

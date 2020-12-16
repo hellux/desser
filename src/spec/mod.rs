@@ -10,7 +10,8 @@ pub fn parse_spec(
 ) -> Result<(ast::FileSpecification, sym::SymbolTable), ()> {
     let mut errors: Vec<error::Error> = Vec::new();
     let symtab = sym::SymbolTable::new();
-    let (stream_res, symtab, mut lerr) = lex::parse_token_trees(symtab, &sf.src);
+    let (stream_res, symtab, mut lerr) =
+        lex::parse_token_trees(symtab, &sf.src);
     errors.append(&mut lerr);
     match stream_res {
         Ok(stream) => {

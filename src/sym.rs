@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
+use crate::structure::{Ptr, Val};
+
 pub type Sym = u16;
-pub type Namespace = HashMap<Sym, i64>;
 
 #[derive(Clone, Debug)]
 pub struct SymbolTable {
@@ -30,5 +31,61 @@ impl SymbolTable {
             self.map.insert(String::from(name), sym);
             sym
         }
+    }
+
+    pub fn lookup(&self, name: &str) -> Option<Sym> {
+        self.map.get(name).map(|r| *r)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Namespace(HashMap<Sym, Name>);
+
+#[derive(Clone, Debug)]
+enum Name {
+    Struct(Namespace),
+    Field(Variable),
+}
+
+#[derive(Clone, Debug)]
+pub enum Variable {
+    Direct(Val),   // in memory, e.g constant or evaluated parameter
+    Indirect(Ptr), // in file
+}
+
+impl Namespace {
+    pub fn new() -> Self {
+        Namespace(HashMap::new())
+    }
+
+    pub fn get(&self, syms: &[Sym]) -> Option<&Variable> {
+        let mut ns = &self.0;
+        for i in 0..syms.len() {
+            match ns.get(&syms[i]) {
+                Some(Name::Struct(Namespace(ss))) => ns = &ss,
+                Some(Name::Field(v)) => {
+                    if i == syms.len() - 1 {
+                        return Some(v);
+                    } else {
+                        return None;
+                    }
+                }
+                None => return None,
+            }
+        }
+
+        None
+    }
+
+    pub fn insert_value(&mut self, sym: Sym, val: Val) {
+        self.0.insert(sym, Name::Field(Variable::Direct(val)));
+    }
+
+    pub fn insert_pointer(&mut self, sym: Sym, ptr: Ptr) {
+        self.0.insert(sym, Name::Field(Variable::Indirect(ptr)));
+    }
+
+    pub fn insert_struct(&mut self, sym: Sym, ns: Namespace) {
+        self.0.insert(sym, Name::Struct(ns));
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::spec::error;
 use crate::spec::ast;
+use crate::spec::error;
 use crate::spec::lex::Delim::{Brace, Bracket, Paren};
 use crate::spec::lex::Spacing::{Alone, Joint};
 use crate::spec::lex::{
@@ -320,12 +320,7 @@ impl Parser {
             _ => None,
         };
 
-        Ok(ast::Field {
-            start: ast::Addr::Relative(ast::Expr::Int(0)),
-            ty,
-            id,
-            constraint,
-        })
+        Ok(ast::Field { ty, id, constraint })
     }
 
     fn parse_field_type(
