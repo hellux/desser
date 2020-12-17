@@ -3,42 +3,58 @@ use std::num::Wrapping;
 
 use std::io::{BufRead, Seek, SeekFrom};
 
+pub fn eval<R: BufRead + Seek>(
+    start: u64,
+    pty: &PrimType,
+    byte_order: Order,
+    f: &mut R,
+) -> Val {
+    let bytes = read_bytes(start, pty.size(), byte_order, f);
+    pty.eval(bytes.as_slice())
+}
+
 impl Ptr {
-    fn read_bytes<R: BufRead + Seek>(&self, f: &mut R) -> Vec<u8> {
-        let start_byte = self.start / 8;
-        f.seek(SeekFrom::Start(start_byte)).unwrap();
+    pub fn eval<R: BufRead + Seek>(&self, f: &mut R) -> Val {
+        let bytes =
+            read_bytes(self.start, self.pty.size(), self.byte_order, f);
+        self.pty.eval(bytes.as_slice())
+    }
+}
 
-        let size = self.pty.size() as u64;
-        let end = self.start + size;
-        let end_offset = end % 8;
-        let end_byte = end / 8 + if end_offset > 0 { 1 } else { 0 };
-        let size_bytes = (end_byte - start_byte) as usize;
-        let mut buf = vec![0; size_bytes];
-        f.read(buf.as_mut_slice()).unwrap();
+fn read_bytes<R: BufRead + Seek>(
+    start: u64,
+    size: u8,
+    byte_order: Order,
+    f: &mut R,
+) -> Vec<u8> {
+    let start_byte = start / 8;
+    f.seek(SeekFrom::Start(start_byte)).unwrap();
 
-        if end_offset > 0 {
-            buf[size_bytes - 1] &= 0xff << (8 - end_offset);
-        }
+    let size = size as u64;
+    let end = start + size;
+    let end_offset = end % 8;
+    let end_byte = end / 8 + if end_offset > 0 { 1 } else { 0 };
+    let size_bytes = (end_byte - start_byte) as usize;
+    let mut buf = vec![0; size_bytes];
+    f.read(buf.as_mut_slice()).unwrap();
 
-        // use big endian internally
-        if self.byte_order == Order::LittleEndian {
-            buf.reverse();
-        }
-
-        let start_offset = self.start % 8;
-        if start_offset == 0 {
-            buf
-        } else {
-            let size_aligned =
-                (size / 8 + if size % 8 > 0 { 1 } else { 0 }) as usize;
-            let buf_aligned = shl_vector_be(&buf, start_offset as usize);
-            buf_aligned.into_iter().take(size_aligned).collect()
-        }
+    if end_offset > 0 {
+        buf[size_bytes - 1] &= 0xff << (8 - end_offset);
     }
 
-    pub fn eval<R: BufRead + Seek>(&self, f: &mut R) -> Val {
-        let bytes = self.read_bytes(f);
-        self.pty.eval(bytes.as_slice())
+    // use big endian internally
+    if byte_order == Order::LittleEndian {
+        buf.reverse();
+    }
+
+    let start_offset = start % 8;
+    if start_offset == 0 {
+        buf
+    } else {
+        let size_aligned =
+            (size / 8 + if size % 8 > 0 { 1 } else { 0 }) as usize;
+        let buf_aligned = shl_vector_be(&buf, start_offset as usize);
+        buf_aligned.into_iter().take(size_aligned).collect()
     }
 }
 
@@ -86,7 +102,9 @@ impl PrimType {
                 PrimType::eval_uint(data, *n as usize) as i64
             }
             PrimType::Float(_, _) => unimplemented!(),
-            PrimType::BitVec(_) => unimplemented!(),
+            PrimType::BitVec(n) => {
+                PrimType::eval_uint(data, *n as usize) as i64
+            }
         }
     }
 
@@ -119,30 +137,15 @@ mod test_format {
     const BE: Order = Order::BigEndian;
     const LE: Order = Order::LittleEndian;
 
-    fn test_read_ptr(
-        start: u64,
-        size: u8,
-        byte_order: Order,
-        data: &[u8],
-        expected: &[u8],
-    ) {
-        let mut cursor = Cursor::new(Vec::from(data));
-        let ptr = Ptr {
-            start,
-            pty: PrimType::BitVec(size),
-            byte_order,
-        };
-        assert_eq!(ptr.read_bytes(&mut cursor), expected);
-    }
-
     #[test]
     fn read_data() {
-        test_read_ptr(8, 16, BE, D1, &[0x03, 0x07]);
-        test_read_ptr(2 * 8, 9, BE, D1, &[0x07, 0x80]);
-        test_read_ptr(4, 4, BE, D1, &[0xf0]);
-        test_read_ptr(20, 8, BE, D1, &[0x7f]);
-        test_read_ptr(0, 16, LE, D1, &[0x03, 0xff]);
-        test_read_ptr(4, 16, BE, D1, &[0xf0, 0x30]);
+        let mut d1c = Cursor::new(D1);
+        assert_eq!(read_bytes(8, 16, BE, &mut d1c), &[0x03, 0x07]);
+        assert_eq!(read_bytes(2 * 8, 9, BE, &mut d1c), &[0x07, 0x80]);
+        assert_eq!(read_bytes(4, 4, BE, &mut d1c), &[0xf0]);
+        assert_eq!(read_bytes(20, 8, BE, &mut d1c), &[0x7f]);
+        assert_eq!(read_bytes(0, 16, LE, &mut d1c), &[0x03, 0xff]);
+        assert_eq!(read_bytes(4, 16, BE, &mut d1c), &[0xf0, 0x30]);
     }
 
     #[test]

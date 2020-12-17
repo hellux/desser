@@ -5,7 +5,7 @@ mod parse;
 pub mod view;
 pub use parse::FileParser;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Order {
     LittleEndian,
     BigEndian,
@@ -64,4 +64,16 @@ pub struct Struct {
 pub struct StructuredFile {
     pub size: u64,
     pub root: Struct,
+}
+
+impl StructFieldKind {
+    pub fn size(&self) -> u64 {
+        match self {
+            StructFieldKind::Prim(pty) => pty.size() as u64,
+            StructFieldKind::Array(kinds) => {
+                kinds.iter().map(|k| k.size()).sum()
+            }
+            StructFieldKind::Struct(st) => st.size,
+        }
+    }
 }

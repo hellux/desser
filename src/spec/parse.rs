@@ -488,9 +488,15 @@ impl Parser {
                             TokTree::Token(token)
                                 if token.kind == TokKind::Dot =>
                             {
-                                self.assert_spacing(Joint, "member access dot may not be preceded by space");
+                                self.assert_spacing(
+                                    Joint,
+                                    "member access dot may not be preceded by space",
+                                );
                                 self.eat(stream)?; // dot
-                                self.assert_spacing(Joint, "member access dot may not be followed by space");
+                                self.assert_spacing(
+                                    Joint,
+                                    "member access dot may not be followed by space",
+                                );
                                 self.eat(stream)?;
                                 let id = self.expect_ident()?;
                                 ids.push(id);
