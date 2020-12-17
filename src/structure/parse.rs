@@ -111,7 +111,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         let var = ns.get(id).unwrap();
         Ok(match var {
             sym::Variable::Direct(val) => *val,
-            sym::Variable::Indirect(ptr) => ptr.eval(&mut self.f),
+            sym::Variable::Indirect(ptr) => ptr.eval_size(&mut self.f),
         })
     }
 
