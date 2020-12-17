@@ -222,6 +222,18 @@ impl<R: BufRead + Seek> FileParser<R> {
             ast::PrimType::BitVec(len) => {
                 PrimType::BitVec(self.eval(&len, ns)? as u8)
             }
+            ast::PrimType::U8 => PrimType::U8,
+            ast::PrimType::S8 => PrimType::S8,
+            ast::PrimType::U16 => PrimType::U16,
+            ast::PrimType::S16 => PrimType::S16,
+            ast::PrimType::U32 => PrimType::U32,
+            ast::PrimType::S32 => PrimType::S32,
+            ast::PrimType::U64 => PrimType::U64,
+            ast::PrimType::S64 => PrimType::S64,
+            ast::PrimType::U128 => PrimType::U128,
+            ast::PrimType::S128 => PrimType::S128,
+            ast::PrimType::F32 => PrimType::F32,
+            ast::PrimType::F64 => PrimType::F64,
         })
     }
 

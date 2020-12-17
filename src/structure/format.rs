@@ -1,5 +1,5 @@
 use super::{Order, PrimType, Ptr, Val};
-use std::num::Wrapping;
+use std::convert::TryInto;
 
 use std::io::{BufRead, Seek, SeekFrom};
 
@@ -107,9 +107,35 @@ impl PrimType {
                     uint as i64
                 }
             }
-            PrimType::Unsigned(n) => le8_to_uint(data) as i64,
-            PrimType::BitVec(n) => le8_to_uint(data) as i64,
-            PrimType::Float(_, _) => panic!(),
+            PrimType::Unsigned(_) => le8_to_uint(data) as i64,
+            PrimType::BitVec(_) => le8_to_uint(data) as i64,
+            PrimType::U8 => u8::from_le_bytes(data.try_into().unwrap()) as Val,
+            PrimType::S8 => i8::from_le_bytes(data.try_into().unwrap()) as Val,
+            PrimType::U16 => {
+                u16::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::S16 => {
+                i16::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::U32 => {
+                u32::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::S32 => {
+                i32::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::U64 => {
+                u64::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::S64 => {
+                i64::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::U128 => {
+                u128::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            PrimType::S128 => {
+                i128::from_le_bytes(data.try_into().unwrap()) as Val
+            }
+            _ => panic!(),
         }
     }
 }
@@ -141,6 +167,22 @@ impl PrimType {
                 }
                 s
             }
+            PrimType::U8
+            | PrimType::S8
+            | PrimType::U16
+            | PrimType::S16
+            | PrimType::U32
+            | PrimType::S32
+            | PrimType::U64
+            | PrimType::S64
+            | PrimType::U128
+            | PrimType::S128 => format!("{}", self.eval_size(data)),
+            PrimType::F32 => {
+                format!("{}", f32::from_le_bytes(data.try_into().unwrap()))
+            }
+            PrimType::F64 => {
+                format!("{}", f64::from_le_bytes(data.try_into().unwrap()))
+            }
         }
     }
 }
@@ -168,7 +210,6 @@ mod test_format {
 
     #[test]
     fn shift_vector() {
-        dbg!(Wrapping(0xab_u8) << 4 | Wrapping(0xcd_u8) >> 4);
         assert_eq!(le_shr(D1, 4), vec![0x3f, 0x70, 0x00, 0x0f]);
         assert_eq!(le_shr(D1, 2), vec![0xff, 0xc0, 0x01, 0x3c]);
     }

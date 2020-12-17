@@ -50,6 +50,18 @@ pub enum PrimType {
     Unsigned(Expr),
     Float(Expr, Expr), // exponent, mantissa
     BitVec(Expr),
+    U8,
+    S8,
+    U16,
+    S16,
+    U32,
+    S32,
+    U64,
+    S64,
+    U128,
+    S128,
+    F32,
+    F64,
 }
 
 pub const U8: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(8)));
