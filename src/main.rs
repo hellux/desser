@@ -26,7 +26,7 @@ fn main() -> Result<(), std::io::Error> {
             let (binary_file, _) = fp.consume();
             //dbg!(&b);
             let mut v = structure::view::Viewer::new(binary_file, symtab);
-            println!("{}", v.fmt_struct(&b.root, 1));
+            println!("{}", v.fmt_struct(&b.root, 0));
         }
     } else {
         eprintln!("required args: <spec> <binary file>")

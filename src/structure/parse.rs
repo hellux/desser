@@ -81,7 +81,6 @@ impl<R: BufRead + Seek> FileParser<R> {
             ast::Expr::Binary(binop) => {
                 let left = self.eval(&binop.lhs, ns)?;
                 let right = self.eval(&binop.rhs, ns)?;
-                println!("{}, {}", left, right);
                 Ok(match binop.kind {
                     ast::BinOpKind::Add => left + right,
                     ast::BinOpKind::Sub => left - right,
