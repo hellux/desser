@@ -64,22 +64,6 @@ pub enum PrimType {
     F64,
 }
 
-pub const U8: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(8)));
-pub const S8: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(8)));
-pub const U16: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(16)));
-pub const S16: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(16)));
-pub const U32: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(32)));
-pub const S32: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(32)));
-pub const U64: FieldType = FieldType::Prim(PrimType::Unsigned(Expr::Int(64)));
-pub const S64: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(64)));
-pub const U128: FieldType =
-    FieldType::Prim(PrimType::Unsigned(Expr::Int(128)));
-pub const S128: FieldType = FieldType::Prim(PrimType::Signed(Expr::Int(128)));
-pub const F32: FieldType =
-    FieldType::Prim(PrimType::Float(Expr::Int(8), Expr::Int(23)));
-pub const F64: FieldType =
-    FieldType::Prim(PrimType::Float(Expr::Int(11), Expr::Int(52)));
-
 /* Expressions */
 
 #[derive(Clone, Debug)]

@@ -1,7 +1,8 @@
-use super::{Order, PrimType, Ptr, Val};
 use std::convert::TryInto;
-
+use std::io;
 use std::io::{BufRead, Seek, SeekFrom};
+
+use super::{Order, PrimType, Ptr, Val};
 
 pub fn eval_size<R: BufRead + Seek>(
     start: u64,
@@ -141,9 +142,13 @@ impl PrimType {
 }
 
 impl PrimType {
-    pub fn fmt(&self, data: &[u8]) -> String {
+    pub fn fmt<W: io::Write>(
+        &self,
+        out: &mut W,
+        data: &[u8],
+    ) -> io::Result<()> {
         match self {
-            PrimType::Unsigned(_) => format!("{}", le16_to_uint(data)),
+            PrimType::Unsigned(_) => write!(out, "{}", le16_to_uint(data)),
             PrimType::Signed(n) => todo!(),
             PrimType::Float(e, m) => {
                 let mut uint = le16_to_uint(data);
@@ -157,15 +162,14 @@ impl PrimType {
                 let val = mantissa as f64
                     * 2.0_f64.powf(exponent)
                     * if sign == 1 { -1.0 } else { 1.0 };
-                format!("{}", val)
+                write!(out, "{}", val)
             }
             PrimType::BitVec(n) => {
-                let mut s = String::new();
                 for i in 0..*n {
                     let bit = (data[i as usize / 8] >> (7 - (i % 8))) & 1;
-                    s.push(if bit == 0 { '0' } else { '1' });
+                    write!(out, "{}", if bit == 0 { '0' } else { '1' })?;
                 }
-                s
+                Ok(())
             }
             PrimType::U8
             | PrimType::S8
@@ -176,12 +180,12 @@ impl PrimType {
             | PrimType::U64
             | PrimType::S64
             | PrimType::U128
-            | PrimType::S128 => format!("{}", self.eval_size(data)),
+            | PrimType::S128 => write!(out, "{}", self.eval_size(data)),
             PrimType::F32 => {
-                format!("{}", f32::from_le_bytes(data.try_into().unwrap()))
+                write!(out, "{}", f32::from_le_bytes(data.try_into().unwrap()))
             }
             PrimType::F64 => {
-                format!("{}", f64::from_le_bytes(data.try_into().unwrap()))
+                write!(out, "{}", f64::from_le_bytes(data.try_into().unwrap()))
             }
         }
     }

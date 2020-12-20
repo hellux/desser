@@ -21,12 +21,20 @@ fn main() -> Result<(), std::io::Error> {
                 structure::FileParser::new(Box::new(binary_file), spec)
                     .unwrap();
             //dbg!(&symtab);
+            println!("spec loaded");
             let root_sym = symtab.lookup("root").unwrap();
             let b = fp.parse(root_sym).unwrap();
             let (binary_file, _) = fp.consume();
+            println!("parsed");
             //dbg!(&b);
-            let mut v = structure::view::Viewer::new(binary_file, symtab);
-            println!("{}", v.fmt_struct(&b.root, 0));
+            let mut s = Vec::new();
+            let mut v = structure::view::Viewer::new(
+                binary_file,
+                &mut s,
+                symtab,
+            );
+            v.fmt_struct(&b.root, 0);
+            print!("{}", String::from_utf8_lossy(&s));
         }
     } else {
         eprintln!("required args: <spec> <binary file>")
