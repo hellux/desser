@@ -62,7 +62,7 @@ impl<R: BufRead + Seek> FileParser<R> {
             SeekFrom::End(rel_addr) => (self.length as i64 + rel_addr) as u64,
         };
 
-        if new_pos < self.length {
+        if new_pos <= self.length {
             self.pos = new_pos;
             Ok(self.pos)
         } else {
