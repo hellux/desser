@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read, SeekFrom, Seek};
 
 mod spec;
 mod structure;
@@ -24,16 +24,20 @@ fn main() -> Result<(), std::io::Error> {
             println!("spec loaded");
             let root_sym = symtab.lookup("root").unwrap();
             let b = fp.parse(root_sym).unwrap();
-            let (binary_file, _) = fp.consume();
+            let (mut binary_file, _) = fp.consume();
             println!("parsed");
             //dbg!(&b);
+            let mut buf = Vec::with_capacity(b.size as usize / 8);
+            binary_file.seek(SeekFrom::Start(0))?;
+            let n = binary_file.read_to_end(&mut buf)?;
+            let cursor = std::io::Cursor::new(buf);
             let mut s = Vec::new();
             let mut v = structure::view::Viewer::new(
-                binary_file,
+                cursor,
                 &mut s,
                 symtab,
             );
-            v.fmt_struct(&b.root, 0);
+            v.fmt_struct(&b.root, 0)?;
             print!("{}", String::from_utf8_lossy(&s));
         }
     } else {
