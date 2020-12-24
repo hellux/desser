@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use crate::spec::ast;
-use crate::spec::error;
-use crate::spec::lex::Delim::{Brace, Bracket, Paren};
-use crate::spec::lex::Spacing::{Alone, Joint};
-use crate::spec::lex::{
+use super::ast;
+use super::error;
+use super::lex::Delim::{Brace, Bracket, Paren};
+use super::lex::Spacing::{Alone, Joint};
+use super::lex::{
     Delim, DelimNode, Keyword, LitKind, Spacing, TokKind, TokTree, Token,
     TokenStream,
 };
@@ -64,15 +64,22 @@ impl From<PError> for error::Error {
 
 pub fn parse_file_spec(
     symtab: sym::SymbolTable,
-    mut tokens: TokenStream,
+    tokens: TokenStream,
 ) -> (
-    Result<ast::FileSpecification, error::Error>,
+    Result<ast::Struct, error::Error>,
     sym::SymbolTable,
     Vec<error::Error>,
 ) {
     let mut parser = Parser::new(symtab);
 
-    let file_spec = parser.parse_spec(&mut tokens);
+    let file_spec =
+        parser.parse_inner_struct(tokens).map(|(structs, fields)| {
+            ast::Struct {
+                parameters: vec![],
+                structs,
+                fields,
+            }
+        });
     let (symtab, errors) = parser.consume();
 
     (
@@ -142,17 +149,6 @@ impl Parser {
         }
     }
 
-    fn expect_keyword(&mut self) -> PResult<Keyword> {
-        let keyword_token = self.expect_token()?;
-
-        match keyword_token.kind {
-            TokKind::Keyword(kw) => Ok(kw),
-            kind => {
-                Err(self.err_hint(UnexpectedToken(kind), "expected a keyword"))
-            }
-        }
-    }
-
     fn expect_ident(&mut self) -> PResult<sym::Sym> {
         let id_token = self.expect_token()?;
 
@@ -192,31 +188,7 @@ impl Parser {
         }
     }
 
-    fn parse_spec(
-        &mut self,
-        stream: &mut TokenStream,
-    ) -> PResult<ast::FileSpecification> {
-        let mut structs = HashMap::new();
-
-        while stream.not_empty() {
-            self.eat(stream)?;
-            let kw = self.expect_keyword()?;
-
-            match kw {
-                Keyword::Def => {
-                    let (id, st) = self.parse_struct(stream)?;
-                    structs.insert(id, st);
-                }
-                Keyword::Set => unimplemented!(),
-            }
-        }
-
-        Ok(ast::FileSpecification {
-            structs,
-            constants: sym::Namespace::new(),
-        })
-    }
-
+    // parse struct, including identifier and formal parameters
     fn parse_struct(
         &mut self,
         stream: &mut TokenStream,
@@ -235,13 +207,23 @@ impl Parser {
             vec![]
         };
 
-        let fields = if dn.delim == Brace {
-            self.parse_struct_fields(dn.stream)?
+        let (structs, fields) = if dn.delim == Brace {
+            self.parse_inner_struct(dn.stream)?
         } else {
-            return Err(self.err(UnexpectedOpenDelim(dn.delim)));
+            return Err(self.err_hint(
+                UnexpectedOpenDelim(dn.delim),
+                "expected braces after struct id",
+            ));
         };
 
-        Ok((id, ast::Struct { parameters, fields }))
+        Ok((
+            id,
+            ast::Struct {
+                parameters,
+                structs,
+                fields,
+            },
+        ))
     }
 
     fn parse_formal_params(
@@ -264,39 +246,42 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_actual_params(
+    // parse struct items (within {} braces)
+    fn parse_inner_struct(
         &mut self,
         mut stream: TokenStream,
-    ) -> PResult<Vec<ast::Expr>> {
-        let mut params = Vec::new();
-
-        while stream.not_empty() {
-            let param_stream = stream.eat_until(&TokKind::Comma);
-            if stream.not_empty() {
-                self.eat(&mut stream)?; // comma, optional if trailing
-            }
-            params.push(self.parse_expr(param_stream)?);
-        }
-
-        Ok(params)
-    }
-
-    fn parse_struct_fields(
-        &mut self,
-        mut stream: TokenStream,
-    ) -> PResult<Vec<ast::Field>> {
+    ) -> PResult<(HashMap<sym::Sym, ast::Struct>, Vec<ast::Field>)> {
         let mut fields = Vec::new();
+        let mut structs = HashMap::new();
 
         while stream.not_empty() {
-            let field_stream = stream.eat_until(&TokKind::Comma);
-            if stream.not_empty() {
-                self.eat(&mut stream)?; // comma, trailing is optional
-            }
+            match stream.peek().unwrap() {
+                TokTree::Token(Token {
+                    kind: TokKind::Keyword(kw),
+                    ..
+                }) => {
+                    let kw = *kw;
+                    self.eat(&mut stream)?; // keyword
+                    match kw {
+                        Keyword::Def => {
+                            let (id, st) = self.parse_struct(&mut stream)?;
+                            structs.insert(id, st);
+                        }
+                        Keyword::Set => unimplemented!(),
+                    }
+                }
+                _ => {
+                    let field_stream = stream.eat_until(&TokKind::Comma);
+                    if stream.not_empty() {
+                        self.eat(&mut stream)?; // comma, trailing is optional
+                    }
 
-            fields.push(self.parse_struct_field(field_stream)?);
+                    fields.push(self.parse_struct_field(field_stream)?);
+                }
+            }
         }
 
-        Ok(fields)
+        Ok((structs, fields))
     }
 
     fn parse_struct_field(
@@ -380,6 +365,23 @@ impl Parser {
             }
             _ => Err(self.err(Unexpected)),
         }
+    }
+
+    fn parse_actual_params(
+        &mut self,
+        mut stream: TokenStream,
+    ) -> PResult<Vec<ast::Expr>> {
+        let mut params = Vec::new();
+
+        while stream.not_empty() {
+            let param_stream = stream.eat_until(&TokKind::Comma);
+            if stream.not_empty() {
+                self.eat(&mut stream)?; // comma, optional if trailing
+            }
+            params.push(self.parse_expr(param_stream)?);
+        }
+
+        Ok(params)
     }
 
     // array ::- [<field_type>; <array_size>]

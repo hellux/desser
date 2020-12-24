@@ -1,7 +1,8 @@
-use crate::spec::error::{Error, Span};
-use crate::spec::lex::cook::{Delim, TokKind, Token, TokenCooker};
-use crate::spec::lex::{LError, LErrorKind, LResult, Spacing};
 use crate::sym;
+
+use super::cook::{Delim, TokKind, Token, TokenCooker};
+use super::error::{Error, Span};
+use super::{LError, LErrorKind, LResult, Spacing};
 
 #[derive(Debug, Clone)]
 pub enum TokTree {

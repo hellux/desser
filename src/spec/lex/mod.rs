@@ -16,7 +16,7 @@ mod raw;
 mod tree;
 
 use self::LErrorKind::*;
-use crate::spec::error;
+use super::error;
 
 pub use cook::{Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{

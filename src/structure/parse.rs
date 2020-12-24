@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{BufRead, Error, ErrorKind, Seek, SeekFrom};
 
 use crate::spec::ast;
@@ -30,24 +31,22 @@ pub type SResult<T> = Result<T, SError>;
 
 pub struct FileParser<R> {
     f: R,
-    spec: ast::FileSpecification,
     pos: u64,
     length: u64,
 }
 
 impl<R: BufRead + Seek> FileParser<R> {
-    pub fn new(mut f: R, spec: ast::FileSpecification) -> SResult<Self> {
+    pub fn new(mut f: R) -> SResult<Self> {
         let length = f.seek(SeekFrom::End(0))? * 8;
         Ok(FileParser {
             f,
-            spec: spec.clone(),
             pos: 0,
             length,
         })
     }
 
-    pub fn parse(&mut self, root_sym: sym::Sym) -> SResult<StructuredFile> {
-        let (root, _) = self.parse_struct(root_sym, &vec![])?;
+    pub fn parse(&mut self, root_spec: &ast::Struct) -> SResult<StructuredFile> {
+        let (root, _) = self.parse_struct(root_spec, &vec![])?;
 
         Ok(StructuredFile {
             size: self.length,
@@ -118,7 +117,6 @@ impl<R: BufRead + Seek> FileParser<R> {
     fn parse_prim(
         &mut self,
         pty: &PrimType,
-        ns: &sym::Namespace,
     ) -> SResult<()> {
         self.seek(SeekFrom::Current(pty.size() as i64))?;
         Ok(())
@@ -126,6 +124,7 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_array(
         &mut self,
+        specs: &HashMap<sym::Sym, ast::Struct>,
         ns: &sym::Namespace,
         kind: &ast::FieldType,
         size: &ast::ArraySize,
@@ -140,7 +139,7 @@ impl<R: BufRead + Seek> FileParser<R> {
 
         let mut n = 0;
         loop {
-            let (member, _) = self.parse_field_kind(ns, kind)?;
+            let (member, _) = self.parse_field_kind(specs, ns, kind)?;
             members.push(member);
 
             // TODO stop on invalid member
@@ -157,14 +156,9 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_struct(
         &mut self,
-        id: sym::Sym,
+        spec: &ast::Struct,
         params: &Vec<Val>,
     ) -> SResult<(Struct, sym::Namespace)> {
-        let spec = self.spec.structs.get(&id).ok_or(Error::new(
-            ErrorKind::NotFound,
-            format!("Struct {} not declared.", id),
-        ))?;
-
         let mut ns = sym::Namespace::new();
 
         for (pval, pname) in params.iter().zip(spec.parameters.iter()) {
@@ -175,7 +169,7 @@ impl<R: BufRead + Seek> FileParser<R> {
 
         let mut fields = Vec::new();
         for f in spec.fields.clone() {
-            let (field, ss_opt) = self.parse_field(&ns, &f)?;
+            let (field, ss_opt) = self.parse_field(&spec.structs, &ns, &f)?;
             if let Some(id) = f.id {
                 if let Some(ss) = ss_opt {
                     ns.insert_struct(id, ss);
@@ -239,17 +233,18 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_field_kind(
         &mut self,
+        specs: &HashMap<sym::Sym, ast::Struct>,
         ns: &sym::Namespace,
         kind: &ast::FieldType,
     ) -> SResult<(StructFieldKind, Option<sym::Namespace>)> {
         Ok(match kind {
             ast::FieldType::Prim(apty) => {
                 let spty = self.convert_prim(apty, ns)?;
-                self.parse_prim(&spty, ns)?;
+                self.parse_prim(&spty)?;
                 (StructFieldKind::Prim(spty), None)
             }
             ast::FieldType::Array(kind, count) => (
-                StructFieldKind::Array(self.parse_array(ns, kind, count)?),
+                StructFieldKind::Array(self.parse_array(specs, ns, kind, count)?),
                 None,
             ),
             ast::FieldType::Struct(id, params) => {
@@ -257,7 +252,11 @@ impl<R: BufRead + Seek> FileParser<R> {
                 for p in params {
                     args.push(self.eval(p, ns)?);
                 }
-                let (st, ss) = self.parse_struct(*id, &args)?;
+                let struct_spec = specs.get(&id).ok_or(Error::new(
+                    ErrorKind::NotFound,
+                    format!("Struct {} not declared.", id),
+                ))?;
+                let (st, ss) = self.parse_struct(struct_spec, &args)?;
                 (StructFieldKind::Struct(st), Some(ss))
             }
         })
@@ -265,11 +264,12 @@ impl<R: BufRead + Seek> FileParser<R> {
 
     fn parse_field(
         &mut self,
+        specs: &HashMap<sym::Sym, ast::Struct>,
         ns: &sym::Namespace,
         field: &ast::Field,
     ) -> SResult<(StructField, Option<sym::Namespace>)> {
         let start = self.pos;
-        let (kind, ss) = self.parse_field_kind(ns, &field.ty)?;
+        let (kind, ss) = self.parse_field_kind(specs, ns, &field.ty)?;
         let size = self.pos - start;
 
         // TODO check constraints
@@ -277,7 +277,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         Ok((StructField { start, size, kind }, ss))
     }
 
-    pub fn consume(self) -> (R, ast::FileSpecification) {
-        (self.f, self.spec)
+    pub fn consume(self) -> R {
+        self.f
     }
 }

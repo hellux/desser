@@ -2,17 +2,12 @@ use std::collections::HashMap;
 
 use crate::sym;
 
-#[derive(Clone, Debug)]
-pub struct FileSpecification {
-    pub structs: HashMap<sym::Sym, Struct>,
-    pub constants: sym::Namespace,
-}
-
 /* Structs */
 
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub parameters: Vec<sym::Sym>,
+    pub structs: HashMap<sym::Sym, Struct>,
     pub fields: Vec<Field>,
 }
 

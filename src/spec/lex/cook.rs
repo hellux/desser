@@ -1,7 +1,8 @@
-use crate::spec::error::Span;
-use crate::spec::lex::raw;
-use crate::spec::lex::{LError, LErrorKind, Spacing};
 use crate::sym;
+
+use super::error::Span;
+use super::raw;
+use super::{LError, LErrorKind, Spacing};
 
 use self::TokKind::*;
 

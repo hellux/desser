@@ -17,7 +17,9 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
     }
 
     pub fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
-        if level > 0 { self.out.write(b"{\n")?; }
+        if level > 0 {
+            self.out.write(b"{\n")?;
+        }
         for (id_opt, f) in &st.fields {
             self.out.write(&vec![b' '; 4 * level])?;
             if let Some(id) = id_opt {

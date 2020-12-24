@@ -7,7 +7,7 @@ use crate::sym;
 
 pub fn parse_spec(
     sf: &error::SpecFile,
-) -> Result<(ast::FileSpecification, sym::SymbolTable), ()> {
+) -> Result<(ast::Struct, sym::SymbolTable), ()> {
     let mut errors: Vec<error::Error> = Vec::new();
     let symtab = sym::SymbolTable::new();
     let (stream_res, symtab, mut lerr) =
