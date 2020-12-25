@@ -46,8 +46,8 @@ impl From<PError> for Error {
                 format!("unexpected closing delimiter")
             }
             InvalidSpacing(actual) => match actual {
-                Joint => format!("there cannot be whitespace here"),
-                Alone => format!("there has to be whitespace here"),
+                Joint => format!("there has to be whitespace here"),
+                Alone => format!("there cannot be whitespace here"),
             },
         };
         let hint = p.hint;
@@ -119,7 +119,7 @@ impl Parser {
 
             Ok(())
         } else {
-            self.pos = self.delim_span.1 + 1;
+            self.pos = self.delim_span.1 - 1;
             Err(self.err(UnexpectedCloseDelimOrEof))
         }
     }
@@ -167,6 +167,7 @@ impl Parser {
 
     fn assert_spacing(&mut self, spacing: Spacing, hint: &'static str) {
         if self.spacing != spacing {
+            self.pos += 1;
             self.errors
                 .push(self.err_hint(InvalidSpacing(self.spacing), hint));
         }
@@ -174,13 +175,11 @@ impl Parser {
 
     fn assert_eof(&mut self, stream: &TokenStream, hint: &'static str) {
         match stream.peek() {
-            Some(tree) => self
-                .errors
-                .push(PError {
-                    kind: Unexpected,
-                    pos: tree.pos(),
-                    hint: Some(hint),
-                }),
+            Some(tree) => self.errors.push(PError {
+                kind: Unexpected,
+                pos: tree.pos(),
+                hint: Some(hint),
+            }),
             None => {}
         }
     }
@@ -392,7 +391,10 @@ impl Parser {
         if stream.not_empty() {
             self.eat(&mut stream)?; // semicolon, optional if no specified size
         }
-        self.assert_eof(&type_stream, "unexpected token after array type");
+        self.assert_eof(
+            &type_stream,
+            "expected semicolon or closing bracket after array type",
+        );
 
         let arr_size = match stream.peek_all()[..] {
             [&TokTree::Token(Token {

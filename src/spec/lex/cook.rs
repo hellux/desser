@@ -131,7 +131,10 @@ impl<'a> TokenCooker<'a> {
             if remaining_src.is_empty() {
                 return (
                     spacing,
-                    Token::new(TokKind::Eof, Span::new(self.pos, self.pos)),
+                    Token::new(
+                        TokKind::Eof,
+                        Span::new(self.pos, self.pos + 1),
+                    ),
                 );
             }
 
