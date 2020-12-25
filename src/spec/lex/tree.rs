@@ -31,6 +31,10 @@ impl TokTree {
             TokTree::Delim(dn) => dn.span,
         }
     }
+
+    pub fn pos(&self) -> u32 {
+        self.span().0
+    }
 }
 
 pub type TreeAndSpace = (TokTree, Spacing);
@@ -47,7 +51,7 @@ impl TokenStream {
     }
 
     pub fn peek_all(&self) -> Vec<&TokTree> {
-        self.0.iter().map(|(tr, sp)| tr).collect()
+        self.0.iter().map(|(tr, _sp)| tr).collect()
     }
 
     pub fn eat(&mut self) -> Option<TreeAndSpace> {

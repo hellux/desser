@@ -113,18 +113,13 @@ impl Parser {
         if stream.not_empty() {
             let (tree, spacing) = stream.eat().unwrap();
 
-            let pos = match &tree {
-                TokTree::Token(token) => token.span.0,
-                TokTree::Delim(dn) => dn.span.0,
-            };
-
+            self.pos = tree.pos();
             self.tree = tree;
             self.spacing = spacing;
-            self.pos = pos;
 
             Ok(())
         } else {
-            self.pos = self.delim_span.1;
+            self.pos = self.delim_span.1 + 1;
             Err(self.err(UnexpectedCloseDelimOrEof))
         }
     }
@@ -183,7 +178,7 @@ impl Parser {
                 .errors
                 .push(PError {
                     kind: Unexpected,
-                    pos: tree.span().0,
+                    pos: tree.pos(),
                     hint: Some(hint),
                 }),
             None => {}
