@@ -11,20 +11,26 @@ pub fn parse_spec(
     let symtab = sym::SymbolTable::new();
     let (stream_res, symtab, mut lerr) =
         lex::parse_token_trees(symtab, &sf.src);
-    errors.append(&mut lerr);
-    match stream_res {
-        Ok(stream) => {
-            let (spec_res, symtab, mut perr) =
-                parse::parse_file_spec(symtab, stream);
-            errors.append(&mut perr);
-            match spec_res {
-                Ok(spec) => return Ok((spec, symtab)),
-                Err(e) => errors.push(e),
+    if lerr.is_empty() {
+        match stream_res {
+            Ok(stream) => {
+                let (spec_res, symtab, mut perr) =
+                    parse::parse_file_spec(symtab, stream);
+                if perr.is_empty() {
+                    match spec_res {
+                        Ok(spec) => return Ok((spec, symtab)),
+                        Err(e) => errors.push(e),
+                    }
+                } else {
+                    errors.append(&mut perr);
+                }
+            }
+            Err(e) => {
+                errors.push(e);
             }
         }
-        Err(e) => {
-            errors.push(e);
-        }
+    } else {
+        errors.append(&mut lerr);
     }
 
     for e in errors {
@@ -96,7 +102,7 @@ impl SpecFile {
         }
 
         let line = (line_no + 1) as u32;
-        let col = pos
+        let col = pos + 1
             - if line_no > 0 {
                 self.lines[line_no - 1]
             } else {
