@@ -88,15 +88,11 @@ fn main() -> Result<(), std::io::Error> {
         //dbg!(&symtab);
         println!("spec loaded");
         let b = fp.parse(&spec).unwrap();
-        let mut binary_file = fp.consume();
+        let binary_file = fp.consume();
         println!("parsed");
         //dbg!(&b);
-        let mut buf = Vec::with_capacity(b.size as usize / 8);
-        binary_file.seek(SeekFrom::Start(0))?;
-        let n = binary_file.read_to_end(&mut buf)?;
-        let cursor = std::io::Cursor::new(buf);
         let mut s = Vec::new();
-        let mut v = structure::view::Viewer::new(cursor, &mut s, symtab);
+        let mut v = structure::view::Viewer::new(binary_file, &mut s, symtab);
         v.fmt_struct(&b.root, 0)?;
         print!("{}", String::from_utf8_lossy(&s));
     }
