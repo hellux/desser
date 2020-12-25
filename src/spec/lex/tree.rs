@@ -1,8 +1,7 @@
 use crate::sym;
 
 use super::cook::{Delim, TokKind, Token, TokenCooker};
-use super::error::{Error, Span};
-use super::{LError, LErrorKind, LResult, Spacing};
+use super::{Error, LError, LErrorKind, LResult, Spacing, Span};
 
 #[derive(Debug, Clone)]
 pub enum TokTree {

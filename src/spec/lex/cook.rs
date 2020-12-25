@@ -1,7 +1,7 @@
 use crate::sym;
 
-use super::error::Span;
 use super::raw;
+use super::Span;
 use super::{LError, LErrorKind, Spacing};
 
 use self::TokKind::*;

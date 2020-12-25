@@ -16,7 +16,7 @@ mod raw;
 mod tree;
 
 use self::LErrorKind::*;
-use super::error;
+use super::{Error, ErrorType, Span};
 
 pub use cook::{Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{
@@ -45,12 +45,12 @@ pub(in crate::spec::lex) enum LErrorKind {
 #[derive(Clone, Debug)]
 pub(in crate::spec::lex) struct LError {
     kind: LErrorKind,
-    span: error::Span,
+    span: Span,
 }
 
 pub(in crate::spec::lex) type LResult<T> = Result<T, LError>;
 
-impl From<LError> for error::Error {
+impl From<LError> for Error {
     fn from(l: LError) -> Self {
         let start = l.span.0;
         let end = Some(l.span.1);
@@ -75,12 +75,12 @@ impl From<LError> for error::Error {
         };
         let hint = None;
 
-        error::Error {
+        Error {
             start,
             end,
             desc,
             hint,
-            ty: error::ErrorType::Lexical,
+            ty: ErrorType::Lexical,
         }
     }
 }
