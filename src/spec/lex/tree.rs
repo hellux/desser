@@ -24,6 +24,13 @@ impl TokTree {
     pub fn take(&mut self) -> Self {
         std::mem::replace(self, TokTree::dummy())
     }
+
+    pub fn span(&self) -> Span {
+        match self {
+            TokTree::Token(t) => t.span,
+            TokTree::Delim(dn) => dn.span,
+        }
+    }
 }
 
 pub type TreeAndSpace = (TokTree, Spacing);

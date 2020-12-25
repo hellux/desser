@@ -179,7 +179,13 @@ impl Parser {
 
     fn assert_eof(&mut self, stream: &TokenStream, hint: &'static str) {
         match stream.peek() {
-            Some(_) => self.errors.push(self.err_hint(Unexpected, hint)),
+            Some(tree) => self
+                .errors
+                .push(PError {
+                    kind: Unexpected,
+                    pos: tree.span().0,
+                    hint: Some(hint),
+                }),
             None => {}
         }
     }
