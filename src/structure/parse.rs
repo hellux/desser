@@ -38,14 +38,13 @@ pub struct FileParser<R> {
 impl<R: BufRead + Seek> FileParser<R> {
     pub fn new(mut f: R) -> SResult<Self> {
         let length = f.seek(SeekFrom::End(0))? * 8;
-        Ok(FileParser {
-            f,
-            pos: 0,
-            length,
-        })
+        Ok(FileParser { f, pos: 0, length })
     }
 
-    pub fn parse(&mut self, root_spec: &ast::Struct) -> SResult<StructuredFile> {
+    pub fn parse(
+        &mut self,
+        root_spec: &ast::Struct,
+    ) -> SResult<StructuredFile> {
         let (root, _) = self.parse_struct(root_spec, &vec![])?;
 
         Ok(StructuredFile {
@@ -114,10 +113,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         })
     }
 
-    fn parse_prim(
-        &mut self,
-        pty: &PrimType,
-    ) -> SResult<()> {
+    fn parse_prim(&mut self, pty: &PrimType) -> SResult<()> {
         self.seek(SeekFrom::Current(pty.size() as i64))?;
         Ok(())
     }
@@ -244,7 +240,9 @@ impl<R: BufRead + Seek> FileParser<R> {
                 (StructFieldKind::Prim(spty), None)
             }
             ast::FieldType::Array(kind, count) => (
-                StructFieldKind::Array(self.parse_array(specs, ns, kind, count)?),
+                StructFieldKind::Array(
+                    self.parse_array(specs, ns, kind, count)?,
+                ),
                 None,
             ),
             ast::FieldType::Struct(id, params) => {
