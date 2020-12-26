@@ -135,16 +135,17 @@ impl<R: BufRead + Seek> FileParser<R> {
 
         let mut n = 0;
         loop {
-            let (member, _) = self.parse_field_kind(specs, ns, kind)?;
-            members.push(member);
-
-            // TODO stop on invalid member
-            n += 1;
             if let Some(m) = max_size {
                 if n >= m {
                     break;
                 }
             }
+
+            let (member, _) = self.parse_field_kind(specs, ns, kind)?;
+            members.push(member);
+
+            // TODO stop on invalid member
+            n += 1;
         }
 
         Ok(members)
