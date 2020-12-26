@@ -254,7 +254,7 @@ impl Cursor<'_> {
         let mut base = Base::Decimal;
 
         if first == '0' {
-            let has_digits = match self.peek() {
+            match self.peek() {
                 'b' => {
                     base = Base::Binary;
                     self.eat();

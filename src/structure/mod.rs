@@ -5,11 +5,7 @@ mod parse;
 pub mod view;
 pub use parse::FileParser;
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Order {
-    LittleEndian,
-    BigEndian,
-}
+use crate::spec::ast::Order;
 
 pub type Val = i64;
 
@@ -58,21 +54,18 @@ impl PrimType {
 
 #[derive(Debug)]
 pub enum StructFieldKind {
-    Prim(PrimType),
+    Prim(Ptr),
     Array(Vec<StructFieldKind>),
     Struct(Struct),
 }
 
 #[derive(Debug)]
 pub struct StructField {
-    pub start: u64,
-    pub size: u64,
     pub kind: StructFieldKind,
 }
 
 #[derive(Debug)]
 pub struct Struct {
-    pub start: u64,
     pub size: u64,
     pub fields: Vec<(Option<sym::Sym>, StructField)>,
 }
@@ -83,10 +76,11 @@ pub struct StructuredFile {
     pub root: Struct,
 }
 
+/*
 impl StructFieldKind {
     pub fn size(&self) -> u64 {
         match self {
-            StructFieldKind::Prim(pty) => pty.size() as u64,
+            StructFieldKind::Prim(Ptr { pty, .. }) => pty.size() as u64,
             StructFieldKind::Array(kinds) => {
                 kinds.iter().map(|k| k.size()).sum()
             }
@@ -94,3 +88,4 @@ impl StructFieldKind {
         }
     }
 }
+*/

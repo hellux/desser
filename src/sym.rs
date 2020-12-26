@@ -33,9 +33,11 @@ impl SymbolTable {
         }
     }
 
+    /*
     pub fn lookup(&self, name: &str) -> Option<Sym> {
         self.map.get(name).map(|r| *r)
     }
+    */
 }
 
 #[derive(Clone, Debug)]

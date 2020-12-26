@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{BufReader, Read, Seek, SeekFrom};
+use std::io::{BufReader, Read};
 
 mod spec;
 mod structure;

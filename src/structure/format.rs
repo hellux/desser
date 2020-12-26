@@ -4,6 +4,7 @@ use std::io::{BufRead, Seek, SeekFrom};
 
 use super::{Order, PrimType, Ptr, Val};
 
+/*
 pub fn eval_size<R: BufRead + Seek>(
     start: u64,
     pty: &PrimType,
@@ -13,6 +14,7 @@ pub fn eval_size<R: BufRead + Seek>(
     let bytes = read_bytes(start, pty.size(), byte_order, f);
     pty.eval_size(bytes.as_slice())
 }
+*/
 
 impl Ptr {
     pub fn eval_size<R: BufRead + Seek>(&self, f: &mut R) -> Val {
@@ -149,7 +151,7 @@ impl PrimType {
     ) -> io::Result<()> {
         match self {
             PrimType::Unsigned(_) => write!(out, "{}", le16_to_uint(data)),
-            PrimType::Signed(n) => todo!(),
+            PrimType::Signed(_) => todo!(),
             PrimType::Float(e, m) => {
                 let mut uint = le16_to_uint(data);
                 let mantissa = uint & (u128::MAX >> (128 - m));

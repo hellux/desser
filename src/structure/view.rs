@@ -2,7 +2,7 @@ use std::io;
 use std::io::{BufRead, Seek, Write};
 
 use super::format;
-use crate::structure::{Order, PrimType, Struct, StructFieldKind};
+use crate::structure::{Struct, StructFieldKind};
 use crate::sym;
 
 pub struct Viewer<R: BufRead + Seek, W: Write> {
@@ -25,7 +25,7 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
             if let Some(id) = id_opt {
                 write!(self.out, "{}: ", self.symtab.name(*id),)?;
             }
-            self.fmt_field(f.start, &f.kind, level)?;
+            self.fmt_field(&f.kind, level)?;
             self.out.write(b"\n")?;
         }
 
@@ -39,7 +39,6 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
 
     pub fn fmt_array(
         &mut self,
-        mut start: u64,
         kinds: &Vec<StructFieldKind>,
         level: usize,
     ) -> io::Result<()> {
@@ -56,10 +55,9 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
                 indent = 4 * level,
                 w = w,
             )?;
-            self.fmt_field(start, kind, level)?;
+            self.fmt_field(kind, level)?;
             self.out.write(b",\n")?;
 
-            start += kind.size();
             i += 1;
         }
 
@@ -69,30 +67,22 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
         Ok(())
     }
 
-    fn fmt_prim(
-        &mut self,
-        start: u64,
-        pty: &PrimType,
-        byte_order: Order,
-    ) -> io::Result<()> {
-        let data =
-            format::read_bytes(start, pty.size(), byte_order, &mut self.f);
-        pty.fmt(&mut self.out, data.as_slice())
-    }
-
     fn fmt_field(
         &mut self,
-        start: u64,
         kind: &StructFieldKind,
         level: usize,
     ) -> io::Result<()> {
         match kind {
-            StructFieldKind::Prim(pty) => {
-                self.fmt_prim(start, pty, Order::LittleEndian)
+            StructFieldKind::Prim(ptr) => {
+                let data = format::read_bytes(
+                    ptr.start,
+                    ptr.pty.size(),
+                    ptr.byte_order,
+                    &mut self.f,
+                );
+                ptr.pty.fmt(&mut self.out, data.as_slice())
             }
-            StructFieldKind::Array(kinds) => {
-                self.fmt_array(start, &kinds, level + 1)
-            }
+            StructFieldKind::Array(kinds) => self.fmt_array(&kinds, level + 1),
             StructFieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
         }
     }

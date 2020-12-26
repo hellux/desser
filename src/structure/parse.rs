@@ -113,8 +113,8 @@ impl<R: BufRead + Seek> FileParser<R> {
         })
     }
 
-    fn parse_prim(&mut self, pty: &PrimType) -> SResult<()> {
-        self.seek(SeekFrom::Current(pty.size() as i64))?;
+    fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
+        self.seek(SeekFrom::Start(ptr.start + ptr.pty.size() as u64))?;
         Ok(())
     }
 
@@ -169,13 +169,8 @@ impl<R: BufRead + Seek> FileParser<R> {
             if let Some(id) = f.id {
                 if let Some(ss) = ss_opt {
                     ns.insert_struct(id, ss);
-                } else if let StructFieldKind::Prim(pty) = &field.kind {
-                    let ptr = Ptr {
-                        start: field.start,
-                        pty: *pty,
-                        byte_order: Order::LittleEndian,
-                    };
-                    ns.insert_pointer(id, ptr);
+                } else if let StructFieldKind::Prim(ptr) = &field.kind {
+                    ns.insert_pointer(id, ptr.clone());
                 }
             }
             fields.push((f.id.clone(), field));
@@ -183,14 +178,7 @@ impl<R: BufRead + Seek> FileParser<R> {
 
         let size = self.pos - start;
 
-        Ok((
-            Struct {
-                start,
-                size,
-                fields,
-            },
-            ns,
-        ))
+        Ok((Struct { size, fields }, ns))
     }
 
     fn convert_prim(
@@ -231,21 +219,32 @@ impl<R: BufRead + Seek> FileParser<R> {
         &mut self,
         specs: &HashMap<sym::Sym, ast::Struct>,
         ns: &sym::Namespace,
-        kind: &ast::FieldType,
+        ty: &ast::FieldType,
     ) -> SResult<(StructFieldKind, Option<sym::Namespace>)> {
-        Ok(match kind {
-            ast::FieldType::Prim(apty) => {
-                let spty = self.convert_prim(apty, ns)?;
-                self.parse_prim(&spty)?;
-                (StructFieldKind::Prim(spty), None)
+        Ok(match &ty.kind {
+            ast::FieldKind::Prim(apty) => {
+                let spty = self.convert_prim(&apty, ns)?;
+                let al = ty.alignment as u64 * 8;
+                let start = if al == 0 || self.pos % al == 0 {
+                    self.pos
+                } else {
+                    self.pos + (al - self.pos % al)
+                };
+                let ptr = Ptr {
+                    start,
+                    pty: spty,
+                    byte_order: ty.byte_order,
+                };
+                self.parse_prim(&ptr)?;
+                (StructFieldKind::Prim(ptr), None)
             }
-            ast::FieldType::Array(kind, count) => (
+            ast::FieldKind::Array(ty, count) => (
                 StructFieldKind::Array(
-                    self.parse_array(specs, ns, kind, count)?,
+                    self.parse_array(specs, ns, ty, count)?,
                 ),
                 None,
             ),
-            ast::FieldType::Struct(id, params) => {
+            ast::FieldKind::Struct(id, params) => {
                 let mut args = Vec::new();
                 for p in params {
                     args.push(self.eval(p, ns)?);
@@ -266,13 +265,11 @@ impl<R: BufRead + Seek> FileParser<R> {
         ns: &sym::Namespace,
         field: &ast::Field,
     ) -> SResult<(StructField, Option<sym::Namespace>)> {
-        let start = self.pos;
         let (kind, ss) = self.parse_field_kind(specs, ns, &field.ty)?;
-        let size = self.pos - start;
 
         // TODO check constraints
 
-        Ok((StructField { start, size, kind }, ss))
+        Ok((StructField { kind }, ss))
     }
 
     pub fn consume(self) -> R {

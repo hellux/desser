@@ -126,8 +126,14 @@ impl SpecFile {
     }
 
     pub fn get_line(&self, line: u32) -> &str {
-        let start = *self.lines.get(line as usize - 2).unwrap_or(&0) + 1;
-        let end = *self.lines.get(line as usize - 1).unwrap_or(&self.length);
+        let (start, end) = if line == 1 {
+            let end = self.lines.get(0).unwrap_or(&self.length);
+            (0, *end)
+        } else {
+            let start = *self.lines.get(line as usize - 2).unwrap_or(&0) + 1;
+            let end = *self.lines.get(line as usize - 1).unwrap_or(&self.length);
+            (start, end)
+        };
         &self.src[start as usize..end as usize]
     }
 
@@ -141,9 +147,9 @@ impl SpecFile {
         }
 
         let line = (line_no + 1) as u32;
-        let col = pos
+        let col = pos + 1
             - if line_no > 0 {
-                self.lines[line_no - 1]
+                self.lines[line_no - 1] + 1
             } else {
                 0
             };

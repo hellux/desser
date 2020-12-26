@@ -26,7 +26,20 @@ pub enum Constraint {
 /* Field types */
 
 #[derive(Clone, Debug)]
-pub enum FieldType {
+pub struct FieldType {
+    pub kind: FieldKind,
+    pub byte_order: Order,
+    pub alignment: u8,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Order {
+    LittleEndian,
+    BigEndian,
+}
+
+#[derive(Clone, Debug)]
+pub enum FieldKind {
     Prim(PrimType),
     Array(Box<FieldType>, ArraySize),
     Struct(sym::Sym, Vec<Expr>),
