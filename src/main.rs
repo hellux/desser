@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 
+mod error;
 mod spec;
 mod structure;
 mod sym;
@@ -84,10 +85,16 @@ fn main() -> Result<(), std::io::Error> {
 
     if let Ok((spec, symtab)) = spec_res {
         let binary_file = BufReader::new(opts.input_file);
-        let mut fp = structure::FileParser::new(binary_file).unwrap();
+        let mut fp = structure::FileParser::new(binary_file);
         //dbg!(&symtab);
         println!("spec loaded");
-        let b = fp.parse(&spec).unwrap();
+        let b = match fp.parse(&spec, &symtab) {
+            Ok(b) => b,
+            Err(e) => {
+                e.display(&opts.spec_file);
+                std::process::exit(1)
+            }
+        };
         let binary_file = fp.consume();
         println!("parsed");
         //dbg!(&b);

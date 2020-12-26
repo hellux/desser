@@ -1,51 +1,88 @@
 use std::collections::HashMap;
-use std::io::{BufRead, Error, ErrorKind, Seek, SeekFrom};
+use std::io::{BufRead, Seek, SeekFrom};
 
+use crate::error::{Error, ErrorType};
 use crate::spec::ast;
+use crate::spec::Span;
 use crate::structure::*;
 use crate::sym;
 
 #[derive(Debug)]
-pub enum SError {
+pub enum SErrorKind {
     EndOfFile,
-    UnfulfilledConstraint,
-    ExcessData,
-    InvalidType,
-    VariableNotInScope,
-    IO(std::io::Error),
+    StructNotInScope(sym::Sym),
+    IdentifierNotInScope(Vec<sym::Sym>),
 }
 
-impl From<std::io::Error> for SError {
-    fn from(e: std::io::Error) -> Self {
-        SError::IO(e)
-    }
-}
-
-impl From<std::io::ErrorKind> for SError {
-    fn from(kind: std::io::ErrorKind) -> Self {
-        SError::from(std::io::Error::from(kind))
-    }
+#[derive(Debug)]
+pub struct SError {
+    span: Span,
+    pos: u64,
+    kind: SErrorKind,
 }
 
 pub type SResult<T> = Result<T, SError>;
 
+impl Error {
+    fn from(s: SError, symtab: &sym::SymbolTable) -> Self {
+        let start = s.span.0;
+        let end = Some(s.span.1);
+        let desc = match s.kind {
+            SErrorKind::EndOfFile => {
+                format!("end of file reached while parsing field")
+            }
+            SErrorKind::StructNotInScope(sym) => {
+                format!("struct '{}' not in scope", symtab.name(sym))
+            }
+            SErrorKind::IdentifierNotInScope(syms) => {
+                format!(
+                    "identifier '{}' not in scope",
+                    syms.iter()
+                        .map(|s| symtab.name(*s))
+                        .collect::<Vec<_>>()
+                        .join(".")
+                )
+            }
+        };
+        let hint = None;
+
+        Error {
+            start,
+            end,
+            desc,
+            hint,
+            ty: ErrorType::Structure,
+        }
+    }
+}
+
 pub struct FileParser<R> {
     f: R,
+    span: Span,
     pos: u64,
     length: u64,
 }
 
 impl<R: BufRead + Seek> FileParser<R> {
-    pub fn new(mut f: R) -> SResult<Self> {
-        let length = f.seek(SeekFrom::End(0))? * 8;
-        Ok(FileParser { f, pos: 0, length })
+    pub fn new(mut f: R) -> Self {
+        let length = f.seek(SeekFrom::End(0)).unwrap() * 8;
+        FileParser {
+            f,
+            span: Span(0, 0),
+            pos: 0,
+            length,
+        }
     }
 
     pub fn parse(
         &mut self,
         root_spec: &ast::Struct,
-    ) -> SResult<StructuredFile> {
-        let (root, _) = self.parse_struct(root_spec, &vec![])?;
+        symtab: &sym::SymbolTable,
+    ) -> Result<StructuredFile, Error> {
+        let (root, _) = match self.parse_struct(root_spec, &vec![]) {
+            Ok(r) => r,
+            Err(e) => return Err(Error::from(e, symtab)),
+        };
 
         Ok(StructuredFile {
             size: self.length,
@@ -64,7 +101,7 @@ impl<R: BufRead + Seek> FileParser<R> {
             self.pos = new_pos;
             Ok(self.pos)
         } else {
-            Err(SError::EndOfFile)
+            Err(self.err(SErrorKind::EndOfFile))
         }
     }
 
@@ -106,11 +143,15 @@ impl<R: BufRead + Seek> FileParser<R> {
         id: &Vec<sym::Sym>,
         ns: &sym::Namespace,
     ) -> SResult<Val> {
-        let var = ns.get(id).unwrap();
-        Ok(match var {
-            sym::Variable::Direct(val) => *val,
-            sym::Variable::Indirect(ptr) => ptr.eval_size(&mut self.f),
-        })
+        match ns.get(id) {
+            Some(var) => Ok(match var {
+                sym::Variable::Direct(val) => *val,
+                sym::Variable::Indirect(ptr) => ptr.eval_size(&mut self.f),
+            }),
+            None => {
+                Err(self.err(SErrorKind::IdentifierNotInScope(id.clone())))
+            }
+        }
     }
 
     fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
@@ -250,10 +291,9 @@ impl<R: BufRead + Seek> FileParser<R> {
                 for p in params {
                     args.push(self.eval(p, ns)?);
                 }
-                let struct_spec = specs.get(&id).ok_or(Error::new(
-                    ErrorKind::NotFound,
-                    format!("Struct {} not declared.", id),
-                ))?;
+                let struct_spec = specs
+                    .get(&id)
+                    .ok_or(self.err(SErrorKind::StructNotInScope(*id)))?;
                 let (st, ss) = self.parse_struct(struct_spec, &args)?;
                 (StructFieldKind::Struct(st), Some(ss))
             }
@@ -266,11 +306,20 @@ impl<R: BufRead + Seek> FileParser<R> {
         ns: &sym::Namespace,
         field: &ast::Field,
     ) -> SResult<(StructField, Option<sym::Namespace>)> {
+        self.span = field.span;
         let (kind, ss) = self.parse_field_kind(specs, ns, &field.ty)?;
 
         // TODO check constraints
 
         Ok((StructField { kind }, ss))
+    }
+
+    fn err(&self, kind: SErrorKind) -> SError {
+        SError {
+            span: self.span,
+            pos: self.pos,
+            kind,
+        }
     }
 
     pub fn consume(self) -> R {

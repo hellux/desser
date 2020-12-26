@@ -7,7 +7,8 @@ use super::lex::{
     Delim, DelimNode, Keyword, LitKind, Spacing, TokKind, TokTree, Token,
     TokenStream,
 };
-use super::{Error, ErrorType, Span};
+use super::Span;
+use crate::error::{Error, ErrorType};
 use crate::sym;
 
 use self::PErrorKind::*;
@@ -284,6 +285,7 @@ impl Parser {
         &mut self,
         mut stream: TokenStream,
     ) -> PResult<ast::Field> {
+        let span = stream.span();
         let ty = self.parse_field_type(&mut stream)?;
         let id = self.parse_field_ident(&mut stream)?;
         let constraint = match stream.peek() {
@@ -301,7 +303,12 @@ impl Parser {
             _ => None,
         };
 
-        Ok(ast::Field { ty, id, constraint })
+        Ok(ast::Field {
+            ty,
+            id,
+            constraint,
+            span,
+        })
     }
 
     fn parse_field_type(

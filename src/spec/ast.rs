@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use crate::sym;
 
+use super::Span;
+
 /* Structs */
 
 #[derive(Clone, Debug)]
@@ -16,6 +18,7 @@ pub struct Field {
     pub ty: FieldType,
     pub id: Option<sym::Sym>,
     pub constraint: Option<Constraint>,
+    pub span: Span,
 }
 
 #[derive(Clone, Debug)]

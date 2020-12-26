@@ -62,6 +62,12 @@ impl TokenStream {
         }
     }
 
+    pub fn span(&self) -> Span {
+        let start = self.0.first().map(|(tr, _)| tr.pos()).unwrap_or(0);
+        let end = self.0.last().map(|(tr, _)| tr.span().1).unwrap_or(0);
+        Span(start, end)
+    }
+
     pub fn eat_while_token<P>(&mut self, pred: &mut P) -> Self
     where
         P: FnMut(&TokKind) -> bool,
