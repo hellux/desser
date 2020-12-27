@@ -19,7 +19,7 @@ use self::LErrorKind::*;
 use super::Span;
 use crate::error::{Error, ErrorType};
 
-pub use cook::{Delim, Keyword, Lit, LitKind, TokKind, Token};
+pub use cook::{Attr, Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{
     parse_token_trees, DelimNode, TokTree, TokenStream, TreeAndSpace,
 };

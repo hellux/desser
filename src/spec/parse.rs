@@ -4,8 +4,8 @@ use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
 use super::lex::Spacing::{Alone, Joint};
 use super::lex::{
-    Delim, DelimNode, Keyword, LitKind, Spacing, TokKind, TokTree, Token,
-    TokenStream,
+    Attr, Delim, DelimNode, Keyword, LitKind, Spacing, TokKind, TokTree,
+    Token, TokenStream,
 };
 use super::Span;
 use crate::error::{Error, ErrorType};
@@ -44,7 +44,7 @@ impl From<PError> for Error {
                 format!("unexpected opening delimiter -- {:?}", delim)
             }
             UnexpectedCloseDelimOrEof => {
-                format!("unexpected closing delimiter")
+                format!("unexpected closing delimiter or end of file")
             }
             InvalidSpacing(actual) => match actual {
                 Joint => format!("there has to be whitespace here"),
@@ -69,14 +69,10 @@ pub fn parse_file_spec(
 ) -> (Result<ast::Struct, Error>, sym::SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
-    let file_spec =
-        parser.parse_inner_struct(tokens).map(|(structs, fields)| {
-            ast::Struct {
-                parameters: vec![],
-                structs,
-                fields,
-            }
-        });
+    let file_spec = parser.parse_block(tokens).map(|block| ast::Struct {
+        parameters: vec![],
+        block,
+    });
     let (symtab, errors) = parser.consume();
 
     (
@@ -204,23 +200,15 @@ impl Parser {
             vec![]
         };
 
-        let (structs, fields) = if dn.delim == Brace {
-            self.parse_inner_struct(dn.stream)?
+        if dn.delim == Brace {
+            let block = self.parse_block(dn.stream)?;
+            Ok((id, ast::Struct { parameters, block }))
         } else {
-            return Err(self.err_hint(
+            Err(self.err_hint(
                 UnexpectedOpenDelim(dn.delim),
                 "expected braces after struct id",
-            ));
-        };
-
-        Ok((
-            id,
-            ast::Struct {
-                parameters,
-                structs,
-                fields,
-            },
-        ))
+            ))
+        }
     }
 
     fn parse_formal_params(
@@ -243,13 +231,9 @@ impl Parser {
         Ok(params)
     }
 
-    // parse struct items (within {} braces)
-    fn parse_inner_struct(
-        &mut self,
-        mut stream: TokenStream,
-    ) -> PResult<(HashMap<sym::Sym, ast::Struct>, Vec<ast::Field>)> {
-        let mut fields = Vec::new();
+    fn parse_block(&mut self, mut stream: TokenStream) -> PResult<ast::Block> {
         let mut structs = HashMap::new();
+        let mut stmts = Vec::new();
 
         while stream.not_empty() {
             match stream.peek().unwrap() {
@@ -264,7 +248,9 @@ impl Parser {
                             let (id, st) = self.parse_struct(&mut stream)?;
                             structs.insert(id, st);
                         }
-                        Keyword::Set => unimplemented!(),
+                        Keyword::If => unimplemented!(),
+                        Keyword::Case => unimplemented!(),
+                        Keyword::Else => unimplemented!(),
                     }
                 }
                 _ => {
@@ -273,12 +259,14 @@ impl Parser {
                         self.eat(&mut stream)?; // comma, trailing is optional
                     }
 
-                    fields.push(self.parse_struct_field(field_stream)?);
+                    stmts.push(ast::Stmt::Field(
+                        self.parse_struct_field(field_stream)?,
+                    ));
                 }
             }
         }
 
-        Ok((structs, fields))
+        Ok(ast::Block { structs, stmts })
     }
 
     fn parse_struct_field(
@@ -318,94 +306,89 @@ impl Parser {
         let mut byte_order = None;
         let mut alignment = 0;
         let kind = loop {
-            match stream.peek() {
-                Some(TokTree::Token(Token {
-                    kind: TokKind::Ident(_),
+            self.eat(stream)?;
+            match self.tree.take() {
+                TokTree::Token(Token {
+                    kind: TokKind::Attr(Attr::Align),
                     ..
-                })) => {
-                    self.eat(stream)?;
-                    let id = self.expect_ident().unwrap();
-                    match String::from(self.symtab.name(id)).as_str() {
-                        "align" => {
-                            self.eat(stream)?; // number
-                            let t = self.expect_token()?;
-                            match t.kind {
-                                TokKind::Literal(LitKind::Int(a)) => {
-                                    alignment = a as u8;
-                                }
-                                _ => {
-                                    return Err(self.err_hint(
-                                        Unexpected,
-                                        "expected alignment size",
-                                    ))
-                                }
-                            }
+                }) => {
+                    self.eat(stream)?; // number
+                    let t = self.expect_token()?;
+                    match t.kind {
+                        TokKind::Literal(LitKind::Int(a)) => {
+                            alignment = a as u8;
                         }
-                        "order" => {
-                            self.eat(stream)?; // le | be
-                            let order = self.expect_ident()?;
-                            byte_order = match self.symtab.name(order) {
-                                "le" => Some(ast::Order::LittleEndian),
-                                "be" => Some(ast::Order::BigEndian),
-                                _ => {
-                                    return Err(self.err_hint(
-                                        Unexpected,
-                                        "expected le or be",
-                                    ))
-                                }
-                            }
-                        }
-                        id_str => {
-                            let params = match stream.peek() {
-                                Some(TokTree::Delim(dn))
-                                    if dn.delim == Paren =>
-                                {
-                                    self.eat(stream)?;
-                                    let dn = self.expect_delim()?;
-                                    self.parse_actual_params(dn.stream)?
-                                }
-                                _ => vec![],
-                            };
-
-                            let parts: Vec<_> = id_str.split('_').collect();
-                            let ident = parts[0];
-                            let ord = parts.get(1);
-                            let kind = if let Some(kind) =
-                                alias_field_kind(ident, params.as_slice())
-                            {
-                                if parts.len() == 1 {
-                                    kind
-                                } else if parts.len() == 2
-                                    && (ord == Some(&"le")
-                                        || ord == Some(&"be"))
-                                {
-                                    byte_order = Some(match ord.unwrap() {
-                                        &"le" => ast::Order::LittleEndian,
-                                        &"be" => ast::Order::BigEndian,
-                                        _ => unreachable!(),
-                                    });
-                                    kind
-                                } else {
-                                    ast::FieldKind::Struct(id, params)
-                                }
-                            } else {
-                                ast::FieldKind::Struct(id, params)
-                            };
-
-                            break kind;
+                        _ => {
+                            return Err(self.err_hint(
+                                Unexpected,
+                                "expected alignment size",
+                            ))
                         }
                     }
                 }
-                Some(TokTree::Delim(dn)) if dn.delim == Bracket => {
-                    self.eat(stream)?;
-                    let dn = self.expect_delim()?;
+                TokTree::Token(Token {
+                    kind: TokKind::Attr(Attr::Order),
+                    ..
+                }) => {
+                    self.eat(stream)?; // le | be
+                    let order = self.expect_ident()?;
+                    byte_order = match self.symtab.name(order) {
+                        "le" => Some(ast::Order::LittleEndian),
+                        "be" => Some(ast::Order::BigEndian),
+                        _ => {
+                            return Err(
+                                self.err_hint(Unexpected, "expected le or be")
+                            )
+                        }
+                    }
+                }
+                TokTree::Token(Token {
+                    kind: TokKind::Ident(_),
+                    ..
+                }) => {
+                    let id = self.expect_ident().unwrap();
+                    let params = match stream.peek() {
+                        Some(TokTree::Delim(dn)) if dn.delim == Paren => {
+                            self.eat(stream)?;
+                            let dn = self.expect_delim()?;
+                            self.parse_actual_params(dn.stream)?
+                        }
+                        _ => vec![],
+                    };
+
+                    let parts: Vec<_> = self.symtab.name(id).split('_').collect();
+                    let ident = parts[0];
+                    let ord = parts.get(1);
+                    let kind = if let Some(kind) =
+                        alias_field_kind(ident, params.as_slice())
+                    {
+                        if parts.len() == 1 {
+                            kind
+                        } else if parts.len() == 2
+                            && (ord == Some(&"le") || ord == Some(&"be"))
+                        {
+                            byte_order = Some(match ord.unwrap() {
+                                &"le" => ast::Order::LittleEndian,
+                                &"be" => ast::Order::BigEndian,
+                                _ => unreachable!(),
+                            });
+                            kind
+                        } else {
+                            ast::FieldKind::Struct(id, params)
+                        }
+                    } else {
+                        ast::FieldKind::Struct(id, params)
+                    };
+
+                    break kind;
+                }
+                TokTree::Delim(dn) if dn.delim == Bracket => {
                     break self.parse_array_type(dn.stream)?;
                 }
                 _ => {
-                    return Err(self.err_hint(
-                        UnexpectedCloseDelimOrEof,
-                        "expected field type",
-                    ))
+                    return Err(
+                        self.err_hint(Unexpected, "expected field type")
+                    )
                 }
             }
         };
@@ -450,48 +433,69 @@ impl Parser {
             "expected semicolon or closing bracket after array type",
         );
 
-        let arr_size = match stream.peek_all()[..] {
-            [&TokTree::Token(Token {
-                kind: TokKind::Question,
-                ..
-            })] => {
-                ast::ArraySize::Within(ast::Expr::Int(0), ast::Expr::Int(1))
-            }
-            [&TokTree::Token(Token {
-                kind: TokKind::Plus,
-                ..
-            })] => ast::ArraySize::AtLeast(ast::Expr::Int(1)),
-            [&TokTree::Token(Token {
-                kind: TokKind::Star,
-                ..
-            })]
-            | [] => ast::ArraySize::AtLeast(ast::Expr::Int(0)),
-            _ => {
-                match stream.peek() {
-                    Some(TokTree::Delim(dn)) if dn.delim == Brace => {
-                        self.eat(&mut stream)?;
-                        let dn = self.expect_delim()?;
-                        let mut bounds_stream = dn.stream;
-
-                        let lb_stream =
-                            bounds_stream.eat_until(&TokKind::Comma);
-                        let lower_bound = self.parse_expr(lb_stream)?;
-                        self.eat(&mut stream)?; // comma
-
-                        if bounds_stream.not_empty() {
-                            ast::ArraySize::AtLeast(lower_bound)
-                        } else {
-                            let upper_bound =
-                                self.parse_expr(bounds_stream)?;
-                            ast::ArraySize::Within(lower_bound, upper_bound)
-                        }
-                    }
-                    _ => {
-                        let size = self.parse_expr(stream)?;
-                        ast::ArraySize::Exactly(size)
+        let arr_size = if stream.not_empty() {
+            match stream.peek().unwrap() {
+                TokTree::Token(Token { kind: k, .. })
+                    if k == &TokKind::Question
+                        || k == &TokKind::Plus
+                        || k == &TokKind::Star =>
+                {
+                    self.eat(&mut stream)?;
+                    let t = self.expect_token()?;
+                    self.assert_eof(
+                        &stream,
+                        "expected no more tokens after array size",
+                    );
+                    let span = t.span;
+                    match t.kind {
+                        TokKind::Question => ast::ArraySize::Within(
+                            ast::Expr {
+                                kind: ast::ExprKind::Int(0),
+                                span,
+                            },
+                            ast::Expr {
+                                kind: ast::ExprKind::Int(1),
+                                span,
+                            },
+                        ),
+                        TokKind::Plus => ast::ArraySize::AtLeast(ast::Expr {
+                            kind: ast::ExprKind::Int(1),
+                            span,
+                        }),
+                        TokKind::Star => ast::ArraySize::AtLeast(ast::Expr {
+                            kind: ast::ExprKind::Int(0),
+                            span,
+                        }),
+                        _ => unreachable!(),
                     }
                 }
+                TokTree::Delim(dn) if dn.delim == Brace => {
+                    self.eat(&mut stream)?;
+                    let dn = self.expect_delim()?;
+                    let mut bounds_stream = dn.stream;
+
+                    let lb_stream = bounds_stream.eat_until(&TokKind::Comma);
+                    let lower_bound = self.parse_expr(lb_stream)?;
+                    self.eat(&mut bounds_stream)?; // comma
+
+                    if bounds_stream.not_empty() {
+                        let upper_bound = self.parse_expr(bounds_stream)?;
+                        dbg!(&upper_bound);
+                        ast::ArraySize::Within(lower_bound, upper_bound)
+                    } else {
+                        ast::ArraySize::AtLeast(lower_bound)
+                    }
+                }
+                _ => {
+                    let size = self.parse_expr(stream)?;
+                    ast::ArraySize::Exactly(size)
+                }
             }
+        } else {
+            ast::ArraySize::AtLeast(ast::Expr {
+                kind: ast::ExprKind::Int(0),
+                span: Span(self.pos, self.pos + 1),
+            })
         };
 
         Ok(ast::FieldKind::Array(Box::new(element_type), arr_size))
@@ -533,9 +537,10 @@ impl Parser {
         min_fixity: u8,
     ) -> PResult<ast::Expr> {
         self.eat(stream)?;
-        let mut lhs = match self.tree.take() {
+        let mut lhs_span = self.tree.span();
+        let mut lhs_kind = match self.tree.take() {
             TokTree::Token(token) => match token.kind {
-                TokKind::Literal(LitKind::Int(val)) => ast::Expr::Int(val),
+                TokKind::Literal(LitKind::Int(val)) => ast::ExprKind::Int(val),
                 TokKind::Ident(id) => {
                     let mut ids = vec![id];
                     while stream.not_empty() {
@@ -559,12 +564,12 @@ impl Parser {
                             _ => break,
                         }
                     }
-                    ast::Expr::Ident(ids)
+                    ast::ExprKind::Ident(ids)
                 }
                 TokKind::Minus => {
                     let op = ast::UnOpKind::Neg;
                     let expr = self.parse_expr_fix(stream, op.fixity())?;
-                    ast::Expr::Unary(Box::new(ast::UnOp {
+                    ast::ExprKind::Unary(Box::new(ast::UnOp {
                         expr,
                         kind: ast::UnOpKind::Neg,
                     }))
@@ -577,7 +582,7 @@ impl Parser {
                 }
             },
             TokTree::Delim(dn) if dn.delim == Paren => {
-                self.parse_expr(dn.stream)?
+                self.parse_expr(dn.stream)?.kind
             }
             TokTree::Delim(dn) => {
                 return Err(self.err_hint(
@@ -615,9 +620,13 @@ impl Parser {
                     }
 
                     self.eat(stream)?; // bin op
+                    let lhs = ast::Expr {
+                        kind: lhs_kind,
+                        span: lhs_span,
+                    };
                     let rhs = self.parse_expr_fix(stream, rfix)?;
-                    let binop = ast::BinOp { lhs, rhs, kind };
-                    lhs = ast::Expr::Binary(Box::new(binop));
+                    lhs_span.1 = rhs.span.1;
+                    lhs_kind = ast::ExprKind::Binary(Box::new(ast::BinOp { lhs, rhs, kind }));
                 }
                 _ => {
                     return Err(
@@ -627,7 +636,7 @@ impl Parser {
             }
         }
 
-        Ok(lhs)
+        Ok(ast::Expr { kind: lhs_kind, span: lhs_span })
     }
 
     fn err(&self, kind: PErrorKind) -> PError {

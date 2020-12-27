@@ -17,12 +17,10 @@ pub struct DelimNode {
 }
 
 impl TokTree {
-    fn dummy() -> Self {
-        TokTree::Token(Token::dummy())
-    }
-
     pub fn take(&mut self) -> Self {
-        std::mem::replace(self, TokTree::dummy())
+        let mut dummy = Token::dummy();
+        dummy.span = self.span();
+        std::mem::replace(self, TokTree::Token(dummy))
     }
 
     pub fn span(&self) -> Span {
@@ -48,10 +46,6 @@ impl TokenStream {
             Some((tree, _)) => Some(&tree),
             _ => None,
         }
-    }
-
-    pub fn peek_all(&self) -> Vec<&TokTree> {
-        self.0.iter().map(|(tr, _sp)| tr).collect()
     }
 
     pub fn eat(&mut self) -> Option<TreeAndSpace> {

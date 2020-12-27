@@ -4,13 +4,39 @@ use crate::sym;
 
 use super::Span;
 
-/* Structs */
+/* Structs/blocks */
 
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub parameters: Vec<sym::Sym>,
+    pub block: Block,
+}
+
+#[derive(Clone, Debug)]
+pub struct Block {
     pub structs: HashMap<sym::Sym, Struct>,
-    pub fields: Vec<Field>,
+    pub stmts: Vec<Stmt>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Stmt {
+    Field(Field),
+    If(IfStmt),
+    Case(CaseStmt),
+}
+
+#[derive(Clone, Debug)]
+pub struct IfStmt {
+    condition: Expr,
+    if_body: Struct,
+    elseifs: Vec<(Expr, Block)>,
+    else_body: Option<Block>,
+}
+
+#[derive(Clone, Debug)]
+pub struct CaseStmt {
+    condition: Expr,
+    cases: Vec<(Expr, Block)>,
 }
 
 #[derive(Clone, Debug)]
@@ -78,7 +104,13 @@ pub enum PrimType {
 /* Expressions */
 
 #[derive(Clone, Debug)]
-pub enum Expr {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum ExprKind {
     Int(i64),
     Ident(Vec<sym::Sym>),
     Binary(Box<BinOp>),

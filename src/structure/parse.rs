@@ -110,10 +110,11 @@ impl<R: BufRead + Seek> FileParser<R> {
         expr: &ast::Expr,
         ns: &sym::Namespace,
     ) -> SResult<Val> {
-        match expr {
-            ast::Expr::Int(val) => Ok(*val),
-            ast::Expr::Ident(id) => self.eval_id(id, ns),
-            ast::Expr::Binary(binop) => {
+        self.span = expr.span;
+        match &expr.kind {
+            ast::ExprKind::Int(val) => Ok(*val),
+            ast::ExprKind::Ident(id) => self.eval_id(&id, ns),
+            ast::ExprKind::Binary(binop) => {
                 let left = self.eval(&binop.lhs, ns)?;
                 let right = self.eval(&binop.rhs, ns)?;
                 Ok(match binop.kind {
@@ -129,7 +130,7 @@ impl<R: BufRead + Seek> FileParser<R> {
                     ast::BinOpKind::Shr => left >> right,
                 })
             }
-            ast::Expr::Unary(unop) => {
+            ast::ExprKind::Unary(unop) => {
                 let expr = self.eval(&unop.expr, ns)?;
                 Ok(match unop.kind {
                     ast::UnOpKind::Neg => -expr,
@@ -206,16 +207,23 @@ impl<R: BufRead + Seek> FileParser<R> {
         let start = self.pos;
 
         let mut fields = Vec::new();
-        for f in spec.fields.clone() {
-            let (field, ss_opt) = self.parse_field(&spec.structs, &ns, &f)?;
-            if let Some(id) = f.id {
-                if let Some(ss) = ss_opt {
-                    ns.insert_struct(id, ss);
-                } else if let StructFieldKind::Prim(ptr) = &field.kind {
-                    ns.insert_pointer(id, ptr.clone());
+        for s in spec.block.stmts.clone() {
+            match s {
+                ast::Stmt::Field(f) => {
+                    let (field, ss_opt) =
+                        self.parse_field(&spec.block.structs, &ns, &f)?;
+                    if let Some(id) = f.id {
+                        if let Some(ss) = ss_opt {
+                            ns.insert_struct(id, ss);
+                        } else if let StructFieldKind::Prim(ptr) = &field.kind
+                        {
+                            ns.insert_pointer(id, ptr.clone());
+                        }
+                    }
+                    fields.push((f.id.clone(), field));
                 }
+                _ => todo!(),
             }
-            fields.push((f.id.clone(), field));
         }
 
         let size = self.pos - start;

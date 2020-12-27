@@ -38,6 +38,7 @@ pub enum TokKind {
 
     Literal(LitKind),
     Keyword(Keyword),
+    Attr(Attr),
     Ident(sym::Sym),
 
     Dot,
@@ -78,7 +79,15 @@ pub enum Delim {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Keyword {
     Def,
-    Set,
+    If,
+    Else,
+    Case,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Attr {
+    Align,
+    Order,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -289,7 +298,11 @@ impl<'a> TokenCooker<'a> {
 
         match id {
             "def" => Keyword(Keyword::Def),
-            "set" => Keyword(Keyword::Set),
+            "align" => Attr(Attr::Align),
+            "order" => Attr(Attr::Order),
+            "if" => Keyword(Keyword::If),
+            "else" => Keyword(Keyword::If),
+            "case" => Keyword(Keyword::Case),
             id => Ident(self.symtab.insert(id)),
         }
     }
