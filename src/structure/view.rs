@@ -47,14 +47,8 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
 
         self.out.write(b"[\n")?;
         for kind in kinds {
-            write!(
-                self.out,
-                "{:indent$}{:>w$}: ",
-                "",
-                i,
-                indent = 4 * level,
-                w = w,
-            )?;
+            self.out.write(&vec![b' '; 4 * level])?;
+            write!(self.out, "{:>w$}: ", i, w = w,)?;
             self.fmt_field(kind, level)?;
             self.out.write(b",\n")?;
 

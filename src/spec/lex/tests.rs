@@ -23,7 +23,7 @@ fn check_lexing(src: &str, expected: &str) {
 
 fn check_cooking(src: &str, expected: &str) {
     let actual: String = cook::tokenize(src)
-        .map(|(_, token)| format!("{:?}", token.kind))
+        .map(|token| format!("{:?}", token.kind))
         .collect::<String>()
         .chars()
         .filter(|c| !is_whitespace(*c))

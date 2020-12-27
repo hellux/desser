@@ -21,14 +21,8 @@ use crate::error::{Error, ErrorType};
 
 pub use cook::{Attr, Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{
-    parse_token_trees, DelimNode, TokTree, TokenStream, TreeAndSpace,
+    parse_token_trees, DelimNode, TokTree, TokenStream
 };
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Spacing {
-    Joint,
-    Alone,
-}
 
 #[derive(Clone, Copy, Debug)]
 pub(in crate::spec::lex) enum LErrorKind {

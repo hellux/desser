@@ -1,7 +1,7 @@
 use crate::sym;
 
 use super::cook::{Delim, TokKind, Token, TokenCooker};
-use super::{Error, LError, LErrorKind, LResult, Spacing, Span};
+use super::{Error, LError, LErrorKind, LResult, Span};
 
 #[derive(Debug, Clone)]
 pub enum TokTree {
@@ -35,20 +35,18 @@ impl TokTree {
     }
 }
 
-pub type TreeAndSpace = (TokTree, Spacing);
-
 #[derive(Debug, Clone)]
-pub struct TokenStream(Vec<TreeAndSpace>);
+pub struct TokenStream(Vec<TokTree>);
 
 impl TokenStream {
     pub fn peek(&self) -> Option<&TokTree> {
         match self.0.get(0) {
-            Some((tree, _)) => Some(&tree),
+            Some(tree) => Some(&tree),
             _ => None,
         }
     }
 
-    pub fn eat(&mut self) -> Option<TreeAndSpace> {
+    pub fn eat(&mut self) -> Option<TokTree> {
         if self.0.is_empty() {
             None
         } else {
@@ -57,8 +55,8 @@ impl TokenStream {
     }
 
     pub fn span(&self) -> Span {
-        let start = self.0.first().map(|(tr, _)| tr.pos()).unwrap_or(0);
-        let end = self.0.last().map(|(tr, _)| tr.span().1).unwrap_or(0);
+        let start = self.0.first().map(|tr| tr.pos()).unwrap_or(0);
+        let end = self.0.last().map(|tr| tr.span().1).unwrap_or(0);
         Span(start, end)
     }
 
@@ -135,7 +133,7 @@ impl<'a> TokTreesReader<'a> {
         Ok(TokenStream(trees))
     }
 
-    fn parse_token_tree(&mut self) -> LResult<TreeAndSpace> {
+    fn parse_token_tree(&mut self) -> LResult<TokTree> {
         let span_start = self.token.span;
         match self.token.kind {
             TokKind::OpenDelim(delim) => {
@@ -168,7 +166,7 @@ impl<'a> TokTreesReader<'a> {
                     span,
                     stream,
                 };
-                Ok((TokTree::Delim(dn), Spacing::Alone))
+                Ok(TokTree::Delim(dn))
             }
             TokKind::CloseDelim(_) => Err(LError {
                 kind: LErrorKind::UnexpectedCloseDelim,
@@ -176,8 +174,8 @@ impl<'a> TokTreesReader<'a> {
             }),
             _ => {
                 let tt = TokTree::Token(self.token.take());
-                let spacing = self.eat();
-                Ok((tt, spacing))
+                self.eat();
+                Ok(tt)
             }
         }
     }
@@ -203,9 +201,8 @@ impl<'a> TokTreesReader<'a> {
         }
     }
 
-    fn eat(&mut self) -> Spacing {
-        let (spacing, token) = self.cooker.next_token();
+    fn eat(&mut self) {
+        let token = self.cooker.next_token();
         self.token = token;
-        spacing
     }
 }

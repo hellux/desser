@@ -2,9 +2,8 @@ use std::collections::HashMap;
 
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
-use super::lex::Spacing::{Alone, Joint};
 use super::lex::{
-    Attr, Delim, DelimNode, Keyword, LitKind, Spacing, TokKind, TokTree,
+    Attr, Delim, DelimNode, Keyword, LitKind, TokKind, TokTree,
     Token, TokenStream,
 };
 use super::Span;
@@ -20,13 +19,12 @@ enum PErrorKind {
     UnexpectedKeyword(Keyword),
     UnexpectedOpenDelim(Delim),
     UnexpectedCloseDelimOrEof,
-    InvalidSpacing(Spacing),
 }
 
 #[derive(Clone, Debug)]
 struct PError {
     kind: PErrorKind,
-    pos: u32,
+    span: Span,
     hint: Option<&'static str>,
 }
 
@@ -34,8 +32,8 @@ type PResult<T> = Result<T, PError>;
 
 impl From<PError> for Error {
     fn from(p: PError) -> Self {
-        let start = p.pos;
-        let end = None;
+        let start = p.span.0;
+        let end = Some(p.span.1);
         let desc = match p.kind {
             Unexpected => format!("unexpected token or delimiter"),
             UnexpectedToken(token) => {
@@ -50,10 +48,6 @@ impl From<PError> for Error {
             UnexpectedCloseDelimOrEof => {
                 format!("unexpected closing delimiter or end of file")
             }
-            InvalidSpacing(actual) => match actual {
-                Joint => format!("there has to be whitespace here"),
-                Alone => format!("there cannot be whitespace here"),
-            },
         };
         let hint = p.hint;
 
@@ -94,9 +88,9 @@ struct Parser {
     symtab: sym::SymbolTable,
 
     tree: TokTree,
-    spacing: Spacing,
-    pos: u32,
 
+    span: Span,
+    prev_span: Span,
     delim_span: Span,
 
     errors: Vec<PError>,
@@ -107,24 +101,25 @@ impl Parser {
         Parser {
             symtab,
             tree: TokTree::Token(Token::dummy()),
-            spacing: Joint,
-            pos: 0,
+            span: Span(0, 0),
+            prev_span: Span(0, 0),
             delim_span: Span(0, 0),
             errors: Vec::new(),
         }
     }
 
     fn eat(&mut self, stream: &mut TokenStream) -> PResult<()> {
-        if stream.not_empty() {
-            let (tree, spacing) = stream.eat().unwrap();
+        self.prev_span = self.span;
 
-            self.pos = tree.pos();
+        if stream.not_empty() {
+            let tree = stream.eat().unwrap();
+
+            self.span = tree.span();
             self.tree = tree;
-            self.spacing = spacing;
 
             Ok(())
         } else {
-            self.pos = self.delim_span.1 - 1;
+            self.span = Span(self.delim_span.1 - 1, self.delim_span.1);
             Err(self.err(UnexpectedCloseDelimOrEof))
         }
     }
@@ -170,19 +165,11 @@ impl Parser {
         }
     }
 
-    fn assert_spacing(&mut self, spacing: Spacing, hint: &'static str) {
-        if self.spacing != spacing {
-            self.pos += 1;
-            self.errors
-                .push(self.err_hint(InvalidSpacing(self.spacing), hint));
-        }
-    }
-
     fn assert_eof(&mut self, stream: &TokenStream, hint: &'static str) {
         match stream.peek() {
             Some(tree) => self.errors.push(PError {
                 kind: Unexpected,
-                pos: tree.pos(),
+                span: tree.span(),
                 hint: Some(hint),
             }),
             None => {}
@@ -615,7 +602,6 @@ impl Parser {
 
                     if bounds_stream.not_empty() {
                         let upper_bound = self.parse_expr(bounds_stream)?;
-                        dbg!(&upper_bound);
                         ast::ArraySize::Within(lower_bound, upper_bound)
                     } else {
                         ast::ArraySize::AtLeast(lower_bound)
@@ -629,7 +615,7 @@ impl Parser {
         } else {
             ast::ArraySize::AtLeast(ast::Expr {
                 kind: ast::ExprKind::Int(0),
-                span: Span(self.pos, self.pos + 1),
+                span: self.span,
             })
         };
 
@@ -685,15 +671,7 @@ impl Parser {
                             TokTree::Token(token)
                                 if token.kind == TokKind::Dot =>
                             {
-                                self.assert_spacing(
-                                    Joint,
-                                    "member access dot may not be preceded by space",
-                                );
                                 self.eat(stream)?; // dot
-                                self.assert_spacing(
-                                    Joint,
-                                    "member access dot may not be followed by space",
-                                );
                                 self.eat(stream)?;
                                 let id = self.expect_ident()?;
                                 ids.push(id);
@@ -786,7 +764,7 @@ impl Parser {
     fn err(&self, kind: PErrorKind) -> PError {
         PError {
             kind,
-            pos: self.pos,
+            span: self.span,
             hint: None,
         }
     }
@@ -794,7 +772,7 @@ impl Parser {
     fn err_hint(&self, kind: PErrorKind, hint: &'static str) -> PError {
         PError {
             kind,
-            pos: self.pos,
+            span: self.span,
             hint: Some(hint),
         }
     }

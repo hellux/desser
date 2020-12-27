@@ -2,7 +2,7 @@ use crate::sym;
 
 use super::raw;
 use super::Span;
-use super::{LError, LErrorKind, Spacing};
+use super::{LError, LErrorKind};
 
 use self::TokKind::*;
 
@@ -132,18 +132,13 @@ impl<'a> TokenCooker<'a> {
         });
     }
 
-    pub fn next_token(&mut self) -> (Spacing, Token) {
-        let mut spacing = Spacing::Joint;
-
+    pub fn next_token(&mut self) -> Token {
         loop {
             let remaining_src = &self.src[self.pos..];
             if remaining_src.is_empty() {
-                return (
-                    spacing,
-                    Token::new(
-                        TokKind::Eof,
-                        Span::new(self.pos, self.pos + 1),
-                    ),
+                return Token::new(
+                    TokKind::Eof,
+                    Span::new(self.pos, self.pos + 1),
                 );
             }
 
@@ -153,12 +148,9 @@ impl<'a> TokenCooker<'a> {
 
             match self.cook_token(token.kind, start) {
                 Some(kind) => {
-                    return (
-                        spacing,
-                        Token::new(kind, Span::new(start, self.pos)),
-                    );
+                    return Token::new(kind, Span::new(start, self.pos));
                 }
-                None => spacing = Spacing::Alone,
+                None => {}
             }
         }
     }
@@ -309,7 +301,7 @@ impl<'a> TokenCooker<'a> {
 }
 
 #[cfg(test)]
-pub fn tokenize(src: &str) -> impl Iterator<Item = (Spacing, Token)> + '_ {
+pub fn tokenize(src: &str) -> impl Iterator<Item = Token> + '_ {
     let symtab = sym::SymbolTable::new();
     let mut cooker = TokenCooker::new(symtab, src);
     let mut empty = false;
@@ -317,9 +309,9 @@ pub fn tokenize(src: &str) -> impl Iterator<Item = (Spacing, Token)> + '_ {
         if empty {
             None
         } else {
-            let (spacing, token) = cooker.next_token();
+            let token = cooker.next_token();
             empty = token.kind == Eof;
-            Some((spacing, token))
+            Some(token)
         }
     })
 }
