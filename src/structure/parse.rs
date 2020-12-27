@@ -207,11 +207,11 @@ impl<R: BufRead + Seek> FileParser<R> {
         let start = self.pos;
 
         let mut fields = Vec::new();
-        for s in spec.block.stmts.clone() {
+        for s in spec.block.clone() {
             match s {
                 ast::Stmt::Field(f) => {
                     let (field, ss_opt) =
-                        self.parse_field(&spec.block.structs, &ns, &f)?;
+                        self.parse_field(&spec.structs, &ns, &f)?;
                     if let Some(id) = f.id {
                         if let Some(ss) = ss_opt {
                             ns.insert_struct(id, ss);

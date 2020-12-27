@@ -17,6 +17,7 @@ use self::PErrorKind::*;
 enum PErrorKind {
     Unexpected,
     UnexpectedToken(TokKind),
+    UnexpectedKeyword(Keyword),
     UnexpectedOpenDelim(Delim),
     UnexpectedCloseDelimOrEof,
     InvalidSpacing(Spacing),
@@ -39,6 +40,9 @@ impl From<PError> for Error {
             Unexpected => format!("unexpected token or delimiter"),
             UnexpectedToken(token) => {
                 format!("unexpected token -- {:?}", token)
+            }
+            UnexpectedKeyword(keyword) => {
+                format!("unexpected keyword -- {:?}", keyword)
             }
             UnexpectedOpenDelim(delim) => {
                 format!("unexpected opening delimiter -- {:?}", delim)
@@ -69,10 +73,14 @@ pub fn parse_file_spec(
 ) -> (Result<ast::Struct, Error>, sym::SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
-    let file_spec = parser.parse_block(tokens).map(|block| ast::Struct {
-        parameters: vec![],
-        block,
-    });
+    let file_spec =
+        parser.parse_inner_struct(tokens).map(|(structs, block)| {
+            ast::Struct {
+                parameters: vec![],
+                structs,
+                block,
+            }
+        });
     let (symtab, errors) = parser.consume();
 
     (
@@ -186,7 +194,7 @@ impl Parser {
         &mut self,
         stream: &mut TokenStream,
     ) -> PResult<(sym::Sym, ast::Struct)> {
-        self.eat(stream)?;
+        self.eat(stream)?; // id
         let id = self.expect_ident()?;
 
         self.eat(stream)?;
@@ -201,8 +209,15 @@ impl Parser {
         };
 
         if dn.delim == Brace {
-            let block = self.parse_block(dn.stream)?;
-            Ok((id, ast::Struct { parameters, block }))
+            let (structs, block) = self.parse_inner_struct(dn.stream)?;
+            Ok((
+                id,
+                ast::Struct {
+                    parameters,
+                    structs,
+                    block,
+                },
+            ))
         } else {
             Err(self.err_hint(
                 UnexpectedOpenDelim(dn.delim),
@@ -231,8 +246,31 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_block(&mut self, mut stream: TokenStream) -> PResult<ast::Block> {
+    fn parse_inner_struct(
+        &mut self,
+        mut stream: TokenStream,
+    ) -> PResult<(HashMap<sym::Sym, ast::Struct>, ast::Block)> {
         let mut structs = HashMap::new();
+        while stream.not_empty() {
+            match stream.peek().unwrap() {
+                TokTree::Token(Token {
+                    kind: TokKind::Keyword(Keyword::Def),
+                    ..
+                }) => {
+                    self.eat(&mut stream)?; // def
+                    let (id, st) = self.parse_struct(&mut stream)?;
+                    structs.insert(id, st);
+                }
+                _ => break,
+            }
+        }
+
+        let block = self.parse_block(stream)?;
+
+        Ok((structs, block))
+    }
+
+    fn parse_block(&mut self, mut stream: TokenStream) -> PResult<ast::Block> {
         let mut stmts = Vec::new();
 
         while stream.not_empty() {
@@ -245,8 +283,10 @@ impl Parser {
                     self.eat(&mut stream)?; // keyword
                     match kw {
                         Keyword::Def => {
-                            let (id, st) = self.parse_struct(&mut stream)?;
-                            structs.insert(id, st);
+                            return Err(self.err_hint(
+                                UnexpectedKeyword(kw),
+                                "structs may only be defined before fields",
+                            ));
                         }
                         Keyword::If => unimplemented!(),
                         Keyword::Case => unimplemented!(),
@@ -266,7 +306,7 @@ impl Parser {
             }
         }
 
-        Ok(ast::Block { structs, stmts })
+        Ok(stmts)
     }
 
     fn parse_struct_field(
@@ -276,6 +316,7 @@ impl Parser {
         let span = stream.span();
         let ty = self.parse_field_type(&mut stream)?;
         let id = self.parse_field_ident(&mut stream)?;
+        /*
         let constraint = match stream.peek() {
             Some(TokTree::Token(token)) if token.kind == TokKind::Tilde => {
                 self.eat(&mut stream)?; // tilde
@@ -290,11 +331,12 @@ impl Parser {
             }
             _ => None,
         };
+        */
 
         Ok(ast::Field {
             ty,
             id,
-            constraint,
+            //constraint,
             span,
         })
     }
@@ -343,10 +385,9 @@ impl Parser {
                     }
                 }
                 TokTree::Token(Token {
-                    kind: TokKind::Ident(_),
+                    kind: TokKind::Ident(id),
                     ..
                 }) => {
-                    let id = self.expect_ident().unwrap();
                     let params = match stream.peek() {
                         Some(TokTree::Delim(dn)) if dn.delim == Paren => {
                             self.eat(stream)?;
@@ -356,7 +397,8 @@ impl Parser {
                         _ => vec![],
                     };
 
-                    let parts: Vec<_> = self.symtab.name(id).split('_').collect();
+                    let parts: Vec<_> =
+                        self.symtab.name(id).split('_').collect();
                     let ident = parts[0];
                     let ord = parts.get(1);
                     let kind = if let Some(kind) =
@@ -518,12 +560,14 @@ impl Parser {
         }
     }
 
+    /*
     fn parse_field_constraint(
         &mut self,
         _stream: TokenStream,
     ) -> PResult<ast::Constraint> {
         unimplemented!()
     }
+    */
 
     fn parse_expr(&mut self, mut stream: TokenStream) -> PResult<ast::Expr> {
         let expr = self.parse_expr_fix(&mut stream, 0)?;
@@ -626,7 +670,11 @@ impl Parser {
                     };
                     let rhs = self.parse_expr_fix(stream, rfix)?;
                     lhs_span.1 = rhs.span.1;
-                    lhs_kind = ast::ExprKind::Binary(Box::new(ast::BinOp { lhs, rhs, kind }));
+                    lhs_kind = ast::ExprKind::Binary(Box::new(ast::BinOp {
+                        lhs,
+                        rhs,
+                        kind,
+                    }));
                 }
                 _ => {
                     return Err(
@@ -636,7 +684,10 @@ impl Parser {
             }
         }
 
-        Ok(ast::Expr { kind: lhs_kind, span: lhs_span })
+        Ok(ast::Expr {
+            kind: lhs_kind,
+            span: lhs_span,
+        })
     }
 
     fn err(&self, kind: PErrorKind) -> PError {

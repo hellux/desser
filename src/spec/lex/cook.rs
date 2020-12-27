@@ -301,7 +301,7 @@ impl<'a> TokenCooker<'a> {
             "align" => Attr(Attr::Align),
             "order" => Attr(Attr::Order),
             "if" => Keyword(Keyword::If),
-            "else" => Keyword(Keyword::If),
+            "else" => Keyword(Keyword::Else),
             "case" => Keyword(Keyword::Case),
             id => Ident(self.symtab.insert(id)),
         }

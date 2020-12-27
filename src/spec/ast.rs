@@ -9,14 +9,11 @@ use super::Span;
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub parameters: Vec<sym::Sym>,
+    pub structs: HashMap<sym::Sym, Struct>,
     pub block: Block,
 }
 
-#[derive(Clone, Debug)]
-pub struct Block {
-    pub structs: HashMap<sym::Sym, Struct>,
-    pub stmts: Vec<Stmt>,
-}
+pub type Block = Vec<Stmt>;
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
@@ -43,14 +40,16 @@ pub struct CaseStmt {
 pub struct Field {
     pub ty: FieldType,
     pub id: Option<sym::Sym>,
-    pub constraint: Option<Constraint>,
+    //    pub constraint: Option<Constraint>,
     pub span: Span,
 }
 
+/*
 #[derive(Clone, Debug)]
 pub enum Constraint {
     Const(Vec<u8>),
 }
+*/
 
 /* Field types */
 
