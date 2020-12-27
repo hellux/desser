@@ -2,7 +2,7 @@ use std::io;
 use std::io::{BufRead, Seek, Write};
 
 use super::format;
-use crate::structure::{Struct, StructFieldKind};
+use crate::structure::{Struct, StructFieldKind, PrimType, Ptr};
 use crate::sym;
 
 pub struct Viewer<R: BufRead + Seek, W: Write> {
@@ -45,18 +45,27 @@ impl<R: BufRead + Seek, W: Write> Viewer<R, W> {
         let mut i = 0;
         let w = format!("{}", kinds.len()).len();
 
-        self.out.write(b"[\n")?;
-        for kind in kinds {
-            self.out.write(&vec![b' '; 4 * level])?;
-            write!(self.out, "{:>w$}: ", i, w = w,)?;
-            self.fmt_field(kind, level)?;
-            self.out.write(b",\n")?;
+        if !kinds.is_empty() {
+            if let StructFieldKind::Prim(Ptr { pty: PrimType::Char, .. }) = kinds[0] {
+                for kind in kinds {
+                    self.fmt_field(kind, level)?;
+                }
+            } else {
+                self.out.write(b"[\n")?;
+                for kind in kinds {
+                    self.out.write(&vec![b' '; 4 * level])?;
+                    write!(self.out, "{:>w$}: ", i, w = w,)?;
+                    self.fmt_field(kind, level)?;
+                    self.out.write(b",\n")?;
 
-            i += 1;
+                    i += 1;
+                }
+
+                self.out.write(&vec![b' '; 4 * (level - 1)])?;
+                self.out.write(b"]")?;
+            }
         }
 
-        self.out.write(&vec![b' '; 4 * (level - 1)])?;
-        self.out.write(b"]")?;
 
         Ok(())
     }

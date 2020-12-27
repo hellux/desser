@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
 use super::lex::{
-    Attr, Delim, DelimNode, Keyword, LitKind, TokKind, TokTree,
-    Token, TokenStream,
+    Attr, Delim, DelimNode, Keyword, LitKind, TokKind, TokTree, Token,
+    TokenStream,
 };
 use super::Span;
 use crate::error::{Error, ErrorType};
@@ -426,7 +426,7 @@ impl Parser {
         stream: &mut TokenStream,
     ) -> PResult<ast::FieldType> {
         let mut byte_order = None;
-        let mut alignment = 0;
+        let mut alignment = None;
         let kind = loop {
             self.eat(stream)?;
             match self.tree.take() {
@@ -435,17 +435,14 @@ impl Parser {
                     ..
                 }) => {
                     self.eat(stream)?; // number
-                    let t = self.expect_token()?;
-                    match t.kind {
-                        TokKind::Literal(LitKind::Int(a)) => {
-                            alignment = a as u8;
-                        }
-                        _ => {
-                            return Err(self.err_hint(
-                                Unexpected,
-                                "expected alignment size",
-                            ))
-                        }
+                    let dn = self.expect_delim()?;
+                    if dn.delim == Paren {
+                        alignment = Some(self.parse_expr(dn.stream)?);
+                    } else {
+                        return Err(self.err_hint(
+                            Unexpected,
+                            "expected parenthesis with alignment size",
+                        ));
                     }
                 }
                 TokTree::Token(Token {
@@ -684,6 +681,7 @@ impl Parser {
                 TokKind::Minus => {
                     let op = ast::UnOpKind::Neg;
                     let expr = self.parse_expr_fix(stream, op.fixity())?;
+                    lhs_span = Span(lhs_span.0, expr.span.1);
                     ast::ExprKind::Unary(Box::new(ast::UnOp {
                         expr,
                         kind: ast::UnOpKind::Neg,
@@ -787,6 +785,7 @@ fn alias_field_kind(
     params: &[ast::Expr],
 ) -> Option<ast::FieldKind> {
     let kind = match (alias, params) {
+        ("char", []) => ast::FieldKind::Prim(ast::PrimType::Char),
         ("u8", []) => ast::FieldKind::Prim(ast::PrimType::U8),
         ("s8", []) => ast::FieldKind::Prim(ast::PrimType::S8),
         ("u16", []) => ast::FieldKind::Prim(ast::PrimType::U16),

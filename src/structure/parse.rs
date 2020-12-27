@@ -12,6 +12,7 @@ pub enum SErrorKind {
     EndOfFile,
     StructNotInScope(sym::Sym),
     IdentifierNotInScope(Vec<sym::Sym>),
+    InvalidValue(Val),
 }
 
 #[derive(Debug)]
@@ -42,6 +43,9 @@ impl Error {
                         .collect::<Vec<_>>()
                         .join(".")
                 )
+            }
+            SErrorKind::InvalidValue(val) => {
+                format!("value '{}' is not valid here", val)
             }
         };
         let hint = None;
@@ -111,7 +115,7 @@ impl<R: BufRead + Seek> FileParser<R> {
         ns: &sym::Namespace,
     ) -> SResult<Val> {
         self.span = expr.span;
-        match &expr.kind {
+        let val = match &expr.kind {
             ast::ExprKind::Int(val) => Ok(*val),
             ast::ExprKind::Ident(id) => self.eval_id(&id, ns),
             ast::ExprKind::Binary(binop) => {
@@ -136,7 +140,9 @@ impl<R: BufRead + Seek> FileParser<R> {
                     ast::UnOpKind::Neg => -expr,
                 })
             }
-        }
+        };
+        self.span = expr.span;
+        val
     }
 
     fn eval_id(
@@ -278,6 +284,7 @@ impl<R: BufRead + Seek> FileParser<R> {
             ast::PrimType::BitVec(len) => {
                 PrimType::BitVec(self.eval(&len, ns)? as u8)
             }
+            ast::PrimType::Char => PrimType::Char,
             ast::PrimType::U8 => PrimType::U8,
             ast::PrimType::S8 => PrimType::S8,
             ast::PrimType::U16 => PrimType::U16,
@@ -302,11 +309,17 @@ impl<R: BufRead + Seek> FileParser<R> {
         Ok(match &ty.kind {
             ast::FieldKind::Prim(apty) => {
                 let spty = self.convert_prim(&apty, ns)?;
-                let al = ty.alignment as u64 * 8;
-                let start = if al == 0 || self.pos % al == 0 {
-                    self.pos
-                } else {
-                    self.pos + (al - self.pos % al)
+                let start = match &ty.alignment {
+                    Some(expr) => {
+                        let al = self.eval(expr, ns)?;
+                        if al > 0 {
+                            let al = al as u64 * 8;
+                            self.pos + (al - self.pos % al)
+                        } else {
+                            return Err(self.err(SErrorKind::InvalidValue(al)));
+                        }
+                    }
+                    None => self.pos,
                 };
                 let ptr = Ptr {
                     start,

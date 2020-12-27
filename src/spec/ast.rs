@@ -57,7 +57,7 @@ pub enum Constraint {
 pub struct FieldType {
     pub kind: FieldKind,
     pub byte_order: Order,
-    pub alignment: u8,
+    pub alignment: Option<Expr>,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -86,6 +86,7 @@ pub enum PrimType {
     Unsigned(Expr),
     Float(Expr, Expr), // exponent, mantissa
     BitVec(Expr),
+    Char,
     U8,
     S8,
     U16,

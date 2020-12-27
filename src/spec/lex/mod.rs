@@ -20,9 +20,7 @@ use super::Span;
 use crate::error::{Error, ErrorType};
 
 pub use cook::{Attr, Delim, Keyword, Lit, LitKind, TokKind, Token};
-pub use tree::{
-    parse_token_trees, DelimNode, TokTree, TokenStream
-};
+pub use tree::{parse_token_trees, DelimNode, TokTree, TokenStream};
 
 #[derive(Clone, Copy, Debug)]
 pub(in crate::spec::lex) enum LErrorKind {

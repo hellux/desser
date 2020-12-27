@@ -22,6 +22,7 @@ pub enum PrimType {
     Unsigned(u8),
     Float(u8, u8), // exponent, mantissa
     BitVec(u8),
+    Char,
     U8,
     S8,
     U16,
@@ -43,7 +44,7 @@ impl PrimType {
             PrimType::Unsigned(len) => *len,
             PrimType::Float(exponent, mantissa) => 1 + exponent + mantissa,
             PrimType::BitVec(len) => *len,
-            PrimType::U8 | PrimType::S8 => 8,
+            PrimType::Char | PrimType::U8 | PrimType::S8 => 8,
             PrimType::U16 | PrimType::S16 => 16,
             PrimType::U32 | PrimType::S32 | PrimType::F32 => 32,
             PrimType::U64 | PrimType::S64 | PrimType::F64 => 64,

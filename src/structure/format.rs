@@ -81,18 +81,16 @@ fn le_shr(v: &[u8], n: usize) -> Vec<u8> {
 }
 
 fn le16_to_uint(data: &[u8]) -> u128 {
-    let n = data.len();
     let mut bytes = [0; 16];
-    for i in 0..n {
+    for i in 0..data.len() {
         bytes[i] = data[i];
     }
     u128::from_le_bytes(bytes)
 }
 
 fn le8_to_uint(data: &[u8]) -> u64 {
-    let n = data.len();
     let mut bytes = [0; 8];
-    for i in 0..n {
+    for i in 0..data.len() {
         bytes[i] = data[i];
     }
     u64::from_le_bytes(bytes)
@@ -112,6 +110,7 @@ impl PrimType {
             }
             PrimType::Unsigned(_) => le8_to_uint(data) as i64,
             PrimType::BitVec(_) => le8_to_uint(data) as i64,
+            PrimType::Char => u8::from_le_bytes(data.try_into().unwrap()) as Val,
             PrimType::U8 => u8::from_le_bytes(data.try_into().unwrap()) as Val,
             PrimType::S8 => i8::from_le_bytes(data.try_into().unwrap()) as Val,
             PrimType::U16 => {
@@ -172,6 +171,9 @@ impl PrimType {
                     write!(out, "{}", if bit == 0 { '0' } else { '1' })?;
                 }
                 Ok(())
+            }
+            PrimType::Char => {
+                write!(out, "{}", data[0] as char)
             }
             PrimType::U8
             | PrimType::S8
