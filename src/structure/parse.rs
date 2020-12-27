@@ -205,13 +205,24 @@ impl<R: BufRead + Seek> FileParser<R> {
         }
 
         let start = self.pos;
+        let fields = self.parse_block(&spec.block, &spec.structs, &mut ns)?;
+        let size = self.pos - start;
 
+        Ok((Struct { size, fields }, ns))
+    }
+
+    fn parse_block(
+        &mut self,
+        block: &ast::Block,
+        structs: &HashMap<sym::Sym, ast::Struct>,
+        ns: &mut sym::Namespace,
+    ) -> SResult<Vec<(Option<sym::Sym>, StructField)>> {
         let mut fields = Vec::new();
-        for s in spec.block.clone() {
+        for s in block {
             match s {
                 ast::Stmt::Field(f) => {
                     let (field, ss_opt) =
-                        self.parse_field(&spec.structs, &ns, &f)?;
+                        self.parse_field(&structs, &ns, &f)?;
                     if let Some(id) = f.id {
                         if let Some(ss) = ss_opt {
                             ns.insert_struct(id, ss);
@@ -222,13 +233,30 @@ impl<R: BufRead + Seek> FileParser<R> {
                     }
                     fields.push((f.id.clone(), field));
                 }
-                _ => todo!(),
+                ast::Stmt::If(if_stmt) => {
+                    let body = if self.eval(&if_stmt.cond, ns)? != 0 {
+                        &if_stmt.if_body
+                    } else {
+                        let mut i = 0;
+                        loop {
+                            if let Some((c, b)) = if_stmt.elseifs.get(i) {
+                                if self.eval(c, ns)? != 0 {
+                                    break b;
+                                } else {
+                                    i += 1;
+                                }
+                            } else {
+                                break &if_stmt.else_body;
+                            }
+                        }
+                    };
+
+                    fields.append(&mut self.parse_block(body, structs, ns)?);
+                }
+                ast::Stmt::Case(case_stmt) => todo!(),
             }
         }
-
-        let size = self.pos - start;
-
-        Ok((Struct { size, fields }, ns))
+        Ok(fields)
     }
 
     fn convert_prim(

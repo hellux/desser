@@ -282,15 +282,24 @@ impl Parser {
                     let kw = *kw;
                     self.eat(&mut stream)?; // keyword
                     match kw {
+                        Keyword::If => {
+                            stmts.push(ast::Stmt::If(
+                                self.parse_if(&mut stream)?,
+                            ));
+                        }
+                        Keyword::Case => unimplemented!(),
                         Keyword::Def => {
                             return Err(self.err_hint(
                                 UnexpectedKeyword(kw),
                                 "structs may only be defined before fields",
                             ));
                         }
-                        Keyword::If => unimplemented!(),
-                        Keyword::Case => unimplemented!(),
-                        Keyword::Else => unimplemented!(),
+                        Keyword::Else => {
+                            return Err(self.err_hint(
+                                UnexpectedKeyword(kw),
+                                "else may only appear after if",
+                            ));
+                        }
                     }
                 }
                 _ => {
@@ -307,6 +316,90 @@ impl Parser {
         }
 
         Ok(stmts)
+    }
+
+    fn parse_if(&mut self, stream: &mut TokenStream) -> PResult<ast::IfStmt> {
+        self.eat(stream)?; // cond delim
+        let dn = self.expect_delim()?;
+        let cond = if dn.delim == Paren {
+            self.parse_expr(dn.stream)?
+        } else {
+            return Err(self.err_hint(
+                UnexpectedOpenDelim(dn.delim),
+                "expected condition after if",
+            ));
+        };
+
+        self.eat(stream)?; // if body delim
+        let dn = self.expect_delim()?;
+        let if_body = if dn.delim == Brace {
+            self.parse_block(dn.stream)?
+        } else {
+            return Err(self.err_hint(
+                UnexpectedOpenDelim(dn.delim),
+                "expected body after if",
+            ));
+        };
+
+        let mut elseifs = Vec::new();
+        let else_body = loop {
+            if let Some(TokTree::Token(Token {
+                kind: TokKind::Keyword(Keyword::Else),
+                ..
+            })) = stream.peek()
+            {
+                self.eat(stream)?; // else
+                let cond_opt = if let Some(TokTree::Token(Token {
+                    kind: TokKind::Keyword(Keyword::If),
+                    ..
+                })) = stream.peek()
+                {
+                    // else if
+                    self.eat(stream)?; // if
+                    self.eat(stream)?; // condition delim
+                    let dn = self.expect_delim()?;
+                    let cond = if dn.delim == Paren {
+                        self.parse_expr(dn.stream)?
+                    } else {
+                        return Err(self.err_hint(
+                            UnexpectedOpenDelim(dn.delim),
+                            "expected condition after else if",
+                        ));
+                    };
+                    Some(cond)
+                } else {
+                    // else (has no condition)
+                    None
+                };
+
+                self.eat(stream)?; // body delim
+                let dn = self.expect_delim()?;
+                let body = if dn.delim == Brace {
+                    self.parse_block(dn.stream)?
+                } else {
+                    return Err(self.err_hint(
+                        UnexpectedOpenDelim(dn.delim),
+                        "expected body after if/else",
+                    ));
+                };
+
+                if let Some(cond) = cond_opt {
+                    elseifs.push((cond, body));
+                } else {
+                    break body;
+                }
+            } else {
+                // other, does not belong to if statement
+                break vec![];
+            }
+        };
+
+        Ok(ast::IfStmt {
+            cond,
+            if_body,
+            elseifs,
+            else_body,
+        })
     }
 
     fn parse_struct_field(

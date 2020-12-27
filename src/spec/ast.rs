@@ -24,16 +24,16 @@ pub enum Stmt {
 
 #[derive(Clone, Debug)]
 pub struct IfStmt {
-    condition: Expr,
-    if_body: Struct,
-    elseifs: Vec<(Expr, Block)>,
-    else_body: Option<Block>,
+    pub cond: Expr,
+    pub if_body: Block,
+    pub elseifs: Vec<(Expr, Block)>,
+    pub else_body: Block,
 }
 
 #[derive(Clone, Debug)]
 pub struct CaseStmt {
-    condition: Expr,
-    cases: Vec<(Expr, Block)>,
+    pub cond: Expr,
+    pub cases: Vec<(Expr, Block)>,
 }
 
 #[derive(Clone, Debug)]
