@@ -17,7 +17,6 @@ impl Error {
         let lineno = format!("{}", l0);
         let ind = lineno.len();
         let line = sf.get_line(l0);
-        dbg!(&self.desc, &self.hint, "");
         let arrc = if l0 == l1 {
             (c1 - c0 + 1) as usize
         } else {

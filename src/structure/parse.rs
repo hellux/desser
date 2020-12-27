@@ -161,6 +161,29 @@ impl<R: BufRead + Seek> FileParser<R> {
         }
     }
 
+    fn align(
+        &mut self,
+        alignment: &Option<ast::Expr>,
+        ns: &sym::Namespace,
+    ) -> SResult<()> {
+        match alignment {
+            Some(expr) => {
+                let al = self.eval(expr, ns)?;
+                if al > 0 {
+                    let al = al as u64 * 8;
+                    if self.pos % al > 0 {
+                        self.pos += al - self.pos % al
+                    }
+                } else {
+                    return Err(self.err(SErrorKind::InvalidValue(al)));
+                }
+            }
+            None => {},
+        };
+
+        Ok(())
+    }
+
     fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
         self.seek(SeekFrom::Start(ptr.start + ptr.pty.size() as u64))?;
         Ok(())
@@ -309,20 +332,9 @@ impl<R: BufRead + Seek> FileParser<R> {
         Ok(match &ty.kind {
             ast::FieldKind::Prim(apty) => {
                 let spty = self.convert_prim(&apty, ns)?;
-                let start = match &ty.alignment {
-                    Some(expr) => {
-                        let al = self.eval(expr, ns)?;
-                        if al > 0 {
-                            let al = al as u64 * 8;
-                            self.pos + (al - self.pos % al)
-                        } else {
-                            return Err(self.err(SErrorKind::InvalidValue(al)));
-                        }
-                    }
-                    None => self.pos,
-                };
+                self.align(&ty.alignment, ns)?;
                 let ptr = Ptr {
-                    start,
+                    start: self.pos,
                     pty: spty,
                     byte_order: ty.byte_order,
                 };
@@ -356,6 +368,9 @@ impl<R: BufRead + Seek> FileParser<R> {
         field: &ast::Field,
     ) -> SResult<(StructField, Option<sym::Namespace>)> {
         self.span = field.span;
+
+        self.align(&field.ty.alignment, ns)?;
+
         let (kind, ss) = self.parse_field_kind(specs, ns, &field.ty)?;
 
         // TODO check constraints
