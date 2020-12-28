@@ -646,8 +646,8 @@ impl Parser {
                             {
                                 self.eat(stream)?; // dot
                                 self.eat(stream)?;
-                                let id = self.expect_ident()?;
-                                ids.push(id);
+                                lhs_span.1 = self.tree.span().1;
+                                ids.push(self.expect_ident()?);
                             }
                             _ => break,
                         }
