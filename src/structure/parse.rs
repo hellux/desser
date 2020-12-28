@@ -178,7 +178,7 @@ impl<R: BufRead + Seek> FileParser<R> {
                     return Err(self.err(SErrorKind::InvalidValue(al)));
                 }
             }
-            None => {},
+            None => {}
         };
 
         Ok(())

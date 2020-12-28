@@ -77,8 +77,50 @@ pub struct StructuredFile {
     pub root: Struct,
 }
 
-/*
+impl Struct {
+    pub fn last(&self) -> Option<&Ptr> {
+        self.fields.last().map(|(_, f)| f.kind.last()).flatten()
+    }
+}
+
 impl StructFieldKind {
+    pub fn is_leaf(&self) -> bool {
+        match self {
+            StructFieldKind::Prim(_) => true,
+            StructFieldKind::Array(kinds) => {
+                if let StructFieldKind::Prim(ptr) = &kinds[0] {
+                    if let PrimType::Char = ptr.pty {
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        }
+    }
+
+    pub fn last(&self) -> Option<&Ptr> {
+        match self {
+            StructFieldKind::Prim(ptr) => Some(ptr),
+            StructFieldKind::Array(kinds) => {
+                kinds.last().map(|k| k.last()).flatten()
+            }
+            StructFieldKind::Struct(st) => st.last(),
+        }
+    }
+
+    pub fn start(&self) -> u64 {
+        match self {
+            StructFieldKind::Prim(ptr) => ptr.start,
+            StructFieldKind::Array(kinds) => kinds[0].start(),
+            StructFieldKind::Struct(st) => st.fields[0].1.kind.start(),
+        }
+    }
+
+    /*
     pub fn size(&self) -> u64 {
         match self {
             StructFieldKind::Prim(Ptr { pty, .. }) => pty.size() as u64,
@@ -88,5 +130,5 @@ impl StructFieldKind {
             StructFieldKind::Struct(st) => st.size,
         }
     }
+    */
 }
-*/

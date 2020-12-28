@@ -110,7 +110,9 @@ impl PrimType {
             }
             PrimType::Unsigned(_) => le8_to_uint(data) as i64,
             PrimType::BitVec(_) => le8_to_uint(data) as i64,
-            PrimType::Char => u8::from_le_bytes(data.try_into().unwrap()) as Val,
+            PrimType::Char => {
+                u8::from_le_bytes(data.try_into().unwrap()) as Val
+            }
             PrimType::U8 => u8::from_le_bytes(data.try_into().unwrap()) as Val,
             PrimType::S8 => i8::from_le_bytes(data.try_into().unwrap()) as Val,
             PrimType::U16 => {

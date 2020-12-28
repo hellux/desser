@@ -86,8 +86,7 @@ fn main() -> Result<(), std::io::Error> {
     if let Ok((spec, symtab)) = spec_res {
         let binary_file = BufReader::new(opts.input_file);
         let mut fp = structure::FileParser::new(binary_file);
-        //dbg!(&symtab);
-        println!("spec loaded");
+
         let b = match fp.parse(&spec, &symtab) {
             Ok(b) => b,
             Err(e) => {
@@ -96,11 +95,10 @@ fn main() -> Result<(), std::io::Error> {
             }
         };
         let binary_file = fp.consume();
-        println!("parsed");
-        //dbg!(&b);
+
         let mut s = Vec::new();
         let mut v = structure::view::Viewer::new(binary_file, &mut s, symtab);
-        v.fmt_struct(&b.root, 0)?;
+        v.format(&b.root)?;
         print!("{}", String::from_utf8_lossy(&s));
     }
 
