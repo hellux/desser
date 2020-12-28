@@ -396,22 +396,7 @@ impl Parser {
         let span = stream.span();
         let ty = self.parse_field_type(&mut stream)?;
         let id = self.parse_field_ident(&mut stream)?;
-        /*
-        let constraint = match stream.peek() {
-            Some(TokTree::Token(token)) if token.kind == TokKind::Tilde => {
-                self.eat(&mut stream)?; // tilde
-                Some(self.parse_field_constraint(stream)?)
-            }
-            Some(_) => {
-                self.eat(&mut stream)?;
-                return Err(self.err_hint(
-                    Unexpected,
-                    "expected constraint or comma after field declaration",
-                ));
-            }
-            _ => None,
-        };
-        */
+        self.assert_eof(&stream, "expected comma after field declaration");
 
         Ok(ast::Field {
             ty,
@@ -635,15 +620,6 @@ impl Parser {
             _ => Ok(None),
         }
     }
-
-    /*
-    fn parse_field_constraint(
-        &mut self,
-        _stream: TokenStream,
-    ) -> PResult<ast::Constraint> {
-        unimplemented!()
-    }
-    */
 
     fn parse_expr(&mut self, mut stream: TokenStream) -> PResult<ast::Expr> {
         let expr = self.parse_expr_fix(&mut stream, 0)?;
