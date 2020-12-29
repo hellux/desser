@@ -79,7 +79,7 @@ pub struct StructuredFile {
 
 impl Struct {
     pub fn last(&self) -> Option<&Ptr> {
-        self.fields.last().map(|(_, f)| f.kind.last()).flatten()
+        self.fields.last().and_then(|(_, f)| f.kind.last())
     }
 }
 
@@ -106,7 +106,7 @@ impl StructFieldKind {
         match self {
             StructFieldKind::Prim(ptr) => Some(ptr),
             StructFieldKind::Array(kinds) => {
-                kinds.last().map(|k| k.last()).flatten()
+                kinds.last().and_then(|k| k.last())
             }
             StructFieldKind::Struct(st) => st.last(),
         }

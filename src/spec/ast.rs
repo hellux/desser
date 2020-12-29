@@ -6,10 +6,12 @@ use super::Span;
 
 /* Structs/blocks */
 
+pub type StructScope = HashMap<sym::Sym, Struct>;
+
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub parameters: Vec<sym::Sym>,
-    pub structs: HashMap<sym::Sym, Struct>,
+    pub structs: StructScope,
     pub block: Block,
 }
 
