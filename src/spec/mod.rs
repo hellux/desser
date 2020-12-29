@@ -2,14 +2,14 @@ pub mod ast;
 mod lex;
 mod parse;
 
-use crate::error::Error;
-use crate::sym;
+use crate::Error;
+use crate::SymbolTable;
 
 pub fn parse_spec(
     sf: &SpecFile,
-) -> Result<(ast::Struct, sym::SymbolTable), ()> {
+) -> Result<(ast::Struct, SymbolTable), Vec<Error>> {
     let mut errors: Vec<Error> = Vec::new();
-    let symtab = sym::SymbolTable::new();
+    let symtab = SymbolTable::new();
     let (stream_res, symtab, mut lerr) =
         lex::parse_token_trees(symtab, &sf.src);
     errors.append(&mut lerr);
@@ -32,11 +32,7 @@ pub fn parse_spec(
         }
     }
 
-    for e in errors {
-        e.display(sf);
-    }
-
-    Err(())
+    Err(errors)
 }
 
 #[derive(Debug)]

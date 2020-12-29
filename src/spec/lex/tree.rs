@@ -1,4 +1,4 @@
-use crate::sym;
+use crate::SymbolTable;
 
 use super::cook::{Delim, TokKind, Token, TokenCooker};
 use super::{Error, LError, LErrorKind, LResult, Span};
@@ -97,9 +97,9 @@ struct TokTreesReader<'a> {
 }
 
 pub fn parse_token_trees<'a>(
-    symtab: sym::SymbolTable,
+    symtab: SymbolTable,
     src: &'a str,
-) -> (Result<TokenStream, Error>, sym::SymbolTable, Vec<Error>) {
+) -> (Result<TokenStream, Error>, SymbolTable, Vec<Error>) {
     let mut ttr = TokTreesReader {
         cooker: TokenCooker::new(symtab, src),
         token: Token::dummy(),

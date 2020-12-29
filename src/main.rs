@@ -1,13 +1,153 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 
-mod error;
-mod spec;
-mod structure;
-mod sym;
+use desser::SpecFile;
+
+mod view {
+    use std::io;
+    use std::io::{BufRead, Seek, Write};
+
+    use desser::format;
+    use desser::{PrimType, Ptr, Struct, StructFieldKind, SymbolTable};
+
+    pub fn view_file<R: BufRead + Seek>(
+        f: &mut R,
+        st: &Struct,
+        symtab: &SymbolTable,
+    ) -> io::Result<String> {
+        let mut s = Vec::new();
+        let mut v = Viewer::new(f, &mut s, symtab);
+        v.format(st)?;
+        Ok(String::from_utf8_lossy(&s).to_string())
+    }
+
+    struct Viewer<'a, R: BufRead + Seek, W: Write> {
+        f: &'a mut R,
+        out: &'a mut W,
+        symtab: &'a SymbolTable,
+        addr_len: usize,
+    }
+
+    impl<'a, R: BufRead + Seek, W: Write> Viewer<'a, R, W> {
+        fn new(f: &'a mut R, out: &'a mut W, symtab: &'a SymbolTable) -> Self {
+            Viewer {
+                f,
+                out,
+                symtab,
+                addr_len: 5,
+            }
+        }
+
+        fn format(&mut self, st: &Struct) -> io::Result<()> {
+            let last_addr = if let Some(ptr) = st.last() {
+                ptr.start / 8
+            } else {
+                0
+            };
+            self.addr_len = format!("{:x}", last_addr).len();
+            self.fmt_struct(st, 0)
+        }
+
+        fn prepend_addr(&mut self, kind: &StructFieldKind) -> io::Result<()> {
+            if kind.is_leaf() {
+                write!(
+                    self.out,
+                    "{:0>l$x}    ",
+                    kind.start() / 8,
+                    l = self.addr_len
+                )
+            } else {
+                write!(self.out, "{:l$}    ", "", l = self.addr_len)
+            }
+        }
+
+        fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
+            if level > 0 {
+                self.out.write(b"{\n")?;
+            }
+            for (id_opt, f) in &st.fields {
+                self.prepend_addr(&f.kind)?;
+                self.out.write(&vec![b' '; 4 * level])?;
+                if let Some(id) = id_opt {
+                    write!(self.out, "{}: ", self.symtab.name(*id),)?;
+                }
+                self.fmt_field(&f.kind, level)?;
+                self.out.write(b"\n")?;
+            }
+
+            if level > 0 {
+                write!(self.out, "{:l$}    ", "", l = self.addr_len)?;
+                self.out.write(&vec![b' '; 4 * (level - 1)])?;
+                self.out.write(b"}")?;
+            }
+
+            Ok(())
+        }
+
+        fn fmt_array(
+            &mut self,
+            kinds: &Vec<StructFieldKind>,
+            level: usize,
+        ) -> io::Result<()> {
+            let mut i = 0;
+            let w = format!("{}", kinds.len()).len();
+
+            if !kinds.is_empty() {
+                if let StructFieldKind::Prim(Ptr {
+                    pty: PrimType::Char,
+                    ..
+                }) = kinds[0]
+                {
+                    for kind in kinds {
+                        self.fmt_field(kind, level)?;
+                    }
+                } else {
+                    self.out.write(b"[\n")?;
+                    for kind in kinds {
+                        self.prepend_addr(&kind)?;
+                        self.out.write(&vec![b' '; 4 * level])?;
+                        write!(self.out, "{:>w$}: ", i, w = w,)?;
+                        self.fmt_field(kind, level)?;
+                        self.out.write(b",\n")?;
+
+                        i += 1;
+                    }
+
+                    write!(self.out, "{:l$}    ", "", l = self.addr_len)?;
+                    self.out.write(&vec![b' '; 4 * (level - 1)])?;
+                    self.out.write(b"]")?;
+                }
+            }
+
+            Ok(())
+        }
+
+        fn fmt_field(
+            &mut self,
+            kind: &StructFieldKind,
+            level: usize,
+        ) -> io::Result<()> {
+            match kind {
+                StructFieldKind::Prim(ptr) => {
+                    let data = format::read_bytes(
+                        ptr.start,
+                        ptr.pty.size(),
+                        ptr.byte_order,
+                        &mut self.f,
+                    );
+                    ptr.pty.fmt(&mut self.out, data.as_slice())
+                }
+                StructFieldKind::Array(kinds) => {
+                    self.fmt_array(&kinds, level + 1)
+                }
+                StructFieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
+            }
+        }
+    }
+}
 
 struct Options {
-    spec_file: spec::SpecFile,
+    spec_file: SpecFile,
     input_file: File,
 }
 
@@ -48,14 +188,14 @@ fn parse_options() -> Options {
     }
 
     let sf = if let Some(spec) = spec {
-        spec::SpecFile::new("<cmdline>", spec)
+        SpecFile::new("<cmdline>", spec)
     } else {
         if let Some(spec_fname) = spec_fname {
             let mut src = String::new();
             let path = std::path::Path::new(&spec_fname);
             let mut src_file = std::fs::File::open(path).unwrap();
             src_file.read_to_string(&mut src).expect("spec not unicode");
-            spec::SpecFile::new(&path.to_string_lossy(), src)
+            SpecFile::new(&path.to_string_lossy(), src)
         } else {
             eprintln!("no spec provided");
             exit_usage(&program);
@@ -81,25 +221,33 @@ fn parse_options() -> Options {
 fn main() -> Result<(), std::io::Error> {
     let opts = parse_options();
 
-    let spec_res = spec::parse_spec(&opts.spec_file);
+    let spec_res = desser::parse_spec(&opts.spec_file);
 
-    if let Ok((spec, symtab)) = spec_res {
-        let binary_file = BufReader::new(opts.input_file);
-        let mut fp = structure::FileParser::new(binary_file);
+    let mut errors = Vec::new();
 
-        let b = match fp.parse(&spec, &symtab) {
-            Ok(b) => b,
-            Err(e) => {
-                e.display(&opts.spec_file);
-                std::process::exit(1)
-            }
-        };
-        let binary_file = fp.consume();
+    match spec_res {
+        Ok((spec, symtab)) => {
+            let mut binary_file = BufReader::new(opts.input_file);
+            match desser::parse_structure(&mut binary_file, &spec, &symtab) {
+                Ok(sf) => {
+                    println!(
+                        "{}",
+                        view::view_file(&mut binary_file, &sf.root, &symtab)?
+                    );
+                }
+                Err(e) => {
+                    errors.push(e);
+                }
+            };
+        }
+        Err(mut es) => errors.append(&mut es),
+    };
 
-        let mut s = Vec::new();
-        let mut v = structure::view::Viewer::new(binary_file, &mut s, symtab);
-        v.format(&b.root)?;
-        print!("{}", String::from_utf8_lossy(&s));
+    if !errors.is_empty() {
+        for e in errors {
+            e.display(&opts.spec_file);
+        }
+        std::process::exit(1);
     }
 
     Ok(())

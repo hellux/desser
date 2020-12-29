@@ -4,18 +4,6 @@ use std::io::{BufRead, Seek, SeekFrom};
 
 use super::{Order, PrimType, Ptr, Val};
 
-/*
-pub fn eval_size<R: BufRead + Seek>(
-    start: u64,
-    pty: &PrimType,
-    byte_order: Order,
-    f: &mut R,
-) -> Val {
-    let bytes = read_bytes(start, pty.size(), byte_order, f);
-    pty.eval_size(bytes.as_slice())
-}
-*/
-
 impl Ptr {
     pub fn eval_size<R: BufRead + Seek>(&self, f: &mut R) -> Val {
         let bytes =

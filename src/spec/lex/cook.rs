@@ -1,4 +1,4 @@
-use crate::sym;
+use crate::{Sym, SymbolTable};
 
 use super::raw;
 use super::Span;
@@ -39,7 +39,7 @@ pub enum TokKind {
     Literal(LitKind),
     Keyword(Keyword),
     Attr(Attr),
-    Ident(sym::Sym),
+    Ident(Sym),
 
     Dot,
     Plus,
@@ -81,7 +81,6 @@ pub enum Keyword {
     Def,
     If,
     Else,
-    Case,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -93,7 +92,7 @@ pub enum Attr {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Lit {
     pub kind: LitKind,
-    pub symbol: sym::Sym,
+    pub symbol: Sym,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -105,14 +104,14 @@ pub enum LitKind {
 
 #[derive(Clone, Debug)]
 pub(super) struct TokenCooker<'a> {
-    symtab: sym::SymbolTable,
+    symtab: SymbolTable,
     pos: usize,
     src: &'a str,
     errors: Vec<LError>,
 }
 
 impl<'a> TokenCooker<'a> {
-    pub fn new(symtab: sym::SymbolTable, src: &'a str) -> Self {
+    pub fn new(symtab: SymbolTable, src: &'a str) -> Self {
         TokenCooker {
             symtab,
             pos: 0,
@@ -121,7 +120,7 @@ impl<'a> TokenCooker<'a> {
         }
     }
 
-    pub fn consume(self) -> (sym::SymbolTable, Vec<LError>) {
+    pub fn consume(self) -> (SymbolTable, Vec<LError>) {
         (self.symtab, self.errors)
     }
 
@@ -294,7 +293,6 @@ impl<'a> TokenCooker<'a> {
             "order" => Attr(Attr::Order),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
-            "case" => Keyword(Keyword::Case),
             id => Ident(self.symtab.insert(id)),
         }
     }
@@ -302,7 +300,7 @@ impl<'a> TokenCooker<'a> {
 
 #[cfg(test)]
 pub fn tokenize(src: &str) -> impl Iterator<Item = Token> + '_ {
-    let symtab = sym::SymbolTable::new();
+    let symtab = SymbolTable::new();
     let mut cooker = TokenCooker::new(symtab, src);
     let mut empty = false;
     std::iter::from_fn(move || {

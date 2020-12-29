@@ -1,16 +1,12 @@
-use std::collections::HashMap;
-
-use crate::sym;
+use crate::{Order, StructScope, Sym, SymTraverse};
 
 use super::Span;
 
 /* Structs/blocks */
 
-pub type StructScope = HashMap<sym::Sym, Struct>;
-
 #[derive(Clone, Debug)]
 pub struct Struct {
-    pub parameters: Vec<sym::Sym>,
+    pub parameters: Vec<Sym>,
     pub structs: StructScope,
     pub block: Block,
 }
@@ -21,7 +17,6 @@ pub type Block = Vec<Stmt>;
 pub enum Stmt {
     Field(Field),
     If(IfStmt),
-    Case(CaseStmt),
 }
 
 #[derive(Clone, Debug)]
@@ -33,25 +28,11 @@ pub struct IfStmt {
 }
 
 #[derive(Clone, Debug)]
-pub struct CaseStmt {
-    pub cond: Expr,
-    pub cases: Vec<(Expr, Block)>,
-}
-
-#[derive(Clone, Debug)]
 pub struct Field {
     pub ty: FieldType,
-    pub id: Option<sym::Sym>,
-    //    pub constraint: Option<Constraint>,
+    pub id: Option<Sym>,
     pub span: Span,
 }
-
-/*
-#[derive(Clone, Debug)]
-pub enum Constraint {
-    Const(Vec<u8>),
-}
-*/
 
 /* Field types */
 
@@ -62,17 +43,11 @@ pub struct FieldType {
     pub alignment: Option<Expr>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum Order {
-    LittleEndian,
-    BigEndian,
-}
-
 #[derive(Clone, Debug)]
 pub enum FieldKind {
     Prim(PrimType),
     Array(Box<FieldType>, ArraySize),
-    Struct(sym::Sym, Vec<Expr>),
+    Struct(Sym, Vec<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -114,7 +89,7 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i64),
-    Ident(Vec<sym::Sym>),
+    Ident(SymTraverse),
     Binary(Box<BinOp>),
     Unary(Box<UnOp>),
 }

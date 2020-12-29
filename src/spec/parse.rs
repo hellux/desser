@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::{Order, Error, ErrorType, Sym, SymbolTable};
+
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
 use super::lex::{
@@ -7,8 +9,6 @@ use super::lex::{
     TokenStream,
 };
 use super::Span;
-use crate::error::{Error, ErrorType};
-use crate::sym;
 
 use self::PErrorKind::*;
 
@@ -32,8 +32,6 @@ type PResult<T> = Result<T, PError>;
 
 impl From<PError> for Error {
     fn from(p: PError) -> Self {
-        let start = p.span.0;
-        let end = Some(p.span.1);
         let desc = match p.kind {
             Unexpected => format!("unexpected token or delimiter"),
             UnexpectedToken(token) => {
@@ -52,8 +50,7 @@ impl From<PError> for Error {
         let hint = p.hint;
 
         Error {
-            start,
-            end,
+            span: p.span,
             desc,
             hint,
             ty: ErrorType::Parsing,
@@ -62,9 +59,9 @@ impl From<PError> for Error {
 }
 
 pub fn parse_file_spec(
-    symtab: sym::SymbolTable,
+    symtab: SymbolTable,
     tokens: TokenStream,
-) -> (Result<ast::Struct, Error>, sym::SymbolTable, Vec<Error>) {
+) -> (Result<ast::Struct, Error>, SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
     let file_spec =
@@ -85,7 +82,7 @@ pub fn parse_file_spec(
 }
 
 struct Parser {
-    symtab: sym::SymbolTable,
+    symtab: SymbolTable,
 
     tree: TokTree,
 
@@ -97,7 +94,7 @@ struct Parser {
 }
 
 impl Parser {
-    fn new(symtab: sym::SymbolTable) -> Self {
+    fn new(symtab: SymbolTable) -> Self {
         Parser {
             symtab,
             tree: TokTree::Token(Token::dummy()),
@@ -140,7 +137,7 @@ impl Parser {
         }
     }
 
-    fn expect_ident(&mut self) -> PResult<sym::Sym> {
+    fn expect_ident(&mut self) -> PResult<Sym> {
         let id_token = self.expect_token()?;
 
         match id_token.kind {
@@ -180,7 +177,7 @@ impl Parser {
     fn parse_struct(
         &mut self,
         stream: &mut TokenStream,
-    ) -> PResult<(sym::Sym, ast::Struct)> {
+    ) -> PResult<(Sym, ast::Struct)> {
         self.eat(stream)?; // id
         let id = self.expect_ident()?;
 
@@ -216,7 +213,7 @@ impl Parser {
     fn parse_formal_params(
         &mut self,
         mut stream: TokenStream,
-    ) -> PResult<Vec<sym::Sym>> {
+    ) -> PResult<Vec<Sym>> {
         let mut params = Vec::new();
 
         if stream.not_empty() {
@@ -236,7 +233,7 @@ impl Parser {
     fn parse_inner_struct(
         &mut self,
         mut stream: TokenStream,
-    ) -> PResult<(HashMap<sym::Sym, ast::Struct>, ast::Block)> {
+    ) -> PResult<(HashMap<Sym, ast::Struct>, ast::Block)> {
         let mut structs = HashMap::new();
         while stream.not_empty() {
             match stream.peek().unwrap() {
@@ -274,7 +271,6 @@ impl Parser {
                                 self.parse_if(&mut stream)?,
                             ));
                         }
-                        Keyword::Case => unimplemented!(),
                         Keyword::Def => {
                             return Err(self.err_hint(
                                 UnexpectedKeyword(kw),
@@ -437,8 +433,8 @@ impl Parser {
                     self.eat(stream)?; // le | be
                     let order = self.expect_ident()?;
                     byte_order = match self.symtab.name(order) {
-                        "le" => Some(ast::Order::LittleEndian),
-                        "be" => Some(ast::Order::BigEndian),
+                        "le" => Some(Order::LittleEndian),
+                        "be" => Some(Order::BigEndian),
                         _ => {
                             return Err(
                                 self.err_hint(Unexpected, "expected le or be")
@@ -472,8 +468,8 @@ impl Parser {
                             && (ord == Some(&"le") || ord == Some(&"be"))
                         {
                             byte_order = Some(match ord.unwrap() {
-                                &"le" => ast::Order::LittleEndian,
-                                &"be" => ast::Order::BigEndian,
+                                &"le" => Order::LittleEndian,
+                                &"be" => Order::BigEndian,
                                 _ => unreachable!(),
                             });
                             kind
@@ -498,7 +494,7 @@ impl Parser {
         };
 
         Ok(ast::FieldType {
-            byte_order: byte_order.unwrap_or(ast::Order::LittleEndian),
+            byte_order: byte_order.unwrap_or(Order::LittleEndian),
             alignment,
             kind,
         })
@@ -607,7 +603,7 @@ impl Parser {
     fn parse_field_ident(
         &mut self,
         stream: &mut TokenStream,
-    ) -> PResult<Option<sym::Sym>> {
+    ) -> PResult<Option<Sym>> {
         match stream.peek() {
             Some(TokTree::Token(Token {
                 kind: TokKind::Ident(_),
@@ -751,7 +747,7 @@ impl Parser {
         }
     }
 
-    fn consume(self) -> (sym::SymbolTable, Vec<PError>) {
+    fn consume(self) -> (SymbolTable, Vec<PError>) {
         (self.symtab, self.errors)
     }
 }

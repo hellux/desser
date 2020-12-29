@@ -1,14 +1,10 @@
-use crate::sym;
-
-mod format;
+pub mod format;
 mod parse;
-pub mod view;
-pub use parse::FileParser;
+pub use parse::parse_structure;
 
-use crate::spec::ast::Order;
+use crate::{Order, Sym};
 
-pub type Val = i64;
-
+type Val = i64;
 #[derive(Clone, Debug)]
 pub struct Ptr {
     pub start: u64,
@@ -38,7 +34,7 @@ pub enum PrimType {
 }
 
 impl PrimType {
-    fn size(&self) -> u8 {
+    pub fn size(&self) -> u8 {
         match self {
             PrimType::Signed(len) => *len,
             PrimType::Unsigned(len) => *len,
@@ -68,7 +64,7 @@ pub struct StructField {
 #[derive(Debug)]
 pub struct Struct {
     pub size: u64,
-    pub fields: Vec<(Option<sym::Sym>, StructField)>,
+    pub fields: Vec<(Option<Sym>, StructField)>,
 }
 
 #[derive(Debug)]

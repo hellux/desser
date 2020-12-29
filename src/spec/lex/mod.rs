@@ -15,15 +15,16 @@ mod cook;
 mod raw;
 mod tree;
 
-use self::LErrorKind::*;
-use super::Span;
-use crate::error::{Error, ErrorType};
+use crate::{Error, ErrorType};
 
+use super::Span;
 pub use cook::{Attr, Delim, Keyword, Lit, LitKind, TokKind, Token};
 pub use tree::{parse_token_trees, DelimNode, TokTree, TokenStream};
 
+use self::LErrorKind::*;
+
 #[derive(Clone, Copy, Debug)]
-pub(in crate::spec::lex) enum LErrorKind {
+enum LErrorKind {
     UnclosedBlockComment,
     UnclosedCharLiteral,
     UnclosedStrLiteral,
@@ -36,17 +37,15 @@ pub(in crate::spec::lex) enum LErrorKind {
 }
 
 #[derive(Clone, Debug)]
-pub(in crate::spec::lex) struct LError {
+struct LError {
     kind: LErrorKind,
     span: Span,
 }
 
-pub(in crate::spec::lex) type LResult<T> = Result<T, LError>;
+type LResult<T> = Result<T, LError>;
 
 impl From<LError> for Error {
     fn from(l: LError) -> Self {
-        let start = l.span.0;
-        let end = Some(l.span.1);
         let desc = match l.kind {
             UnclosedBlockComment => format!(
                 "block comment reached end of file without being closed"
@@ -69,8 +68,7 @@ impl From<LError> for Error {
         let hint = None;
 
         Error {
-            start,
-            end,
+            span: l.span,
             desc,
             hint,
             ty: ErrorType::Lexical,
