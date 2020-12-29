@@ -41,23 +41,18 @@ pub fn read_bytes<R: BufRead + Seek>(
     let mut buf = vec![0; size_bytes];
     f.read(buf.as_mut_slice()).unwrap();
 
-    if end_offset > 0 {
-        buf[size_bytes - 1] &= 0xff << (8 - end_offset);
-    }
-
     // use little endian internally
     if byte_order == Order::BigEndian {
         buf.reverse();
     }
 
     // shift value bits to rightmost side, e.g "[?xxx|xx??]" -> "[???x|xxxx]"
-    let start_offset = start % 8;
-    if start_offset == 0 {
+    if end_offset == 0 {
         buf
     } else {
         let size_aligned =
             (size / 8 + if size % 8 > 0 { 1 } else { 0 }) as usize;
-        let buf_aligned = le_shr(&buf, start_offset as usize);
+        let buf_aligned = le_shr(&buf, 8-end_offset as usize);
         buf_aligned
             .into_iter()
             .skip(size_bytes - size_aligned)
@@ -168,11 +163,7 @@ impl PrimType {
                 write!(out, "{}", val)
             }
             PrimType::BitVec(n) => {
-                for i in 0..*n {
-                    let bit = (data[i as usize / 8] >> (7 - (i % 8))) & 1;
-                    write!(out, "{}", if bit == 0 { '0' } else { '1' })?;
-                }
-                Ok(())
+                write!(out, "{:0n$b}", le16_to_uint(data), n=*n as usize)
             }
             PrimType::Char => {
                 write!(out, "{}", data[0] as char)
@@ -212,9 +203,9 @@ mod test_format {
     fn read_data() {
         let mut d1c = Cursor::new(D1);
         assert_eq!(read_bytes(8, 16, BE, &mut d1c), &[0x07, 0x03]);
-        assert_eq!(read_bytes(2 * 8, 9, BE, &mut d1c), &[0x80, 0x07]);
-        assert_eq!(read_bytes(4, 4, BE, &mut d1c), &[0x0f]);
-        assert_eq!(read_bytes(20, 12, BE, &mut d1c), &[0x7f, 0]);
+        assert_eq!(read_bytes(2 * 8, 9, BE, &mut d1c), &[0x0f, 0x00]);
+        assert_eq!(read_bytes(8 + 4, 4, BE, &mut d1c), &[0x03]);
+        assert_eq!(read_bytes(2*8 + 4, 12, BE, &mut d1c), &[0xf0, 0x07]);
         assert_eq!(read_bytes(0, 16, LE, &mut d1c), &[0xff, 0x03]);
     }
 
