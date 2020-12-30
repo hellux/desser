@@ -271,6 +271,13 @@ impl Parser {
                                 self.parse_if(&mut stream)?,
                             ));
                         }
+                        Keyword::Constrain => {
+                            self.eat(&mut stream)?; // constraint block
+                            let dn = self.expect_delim()?;
+                            stmts.push(ast::Stmt::Constrain(
+                                self.parse_expr_list(dn.stream)?,
+                            ));
+                        }
                         Keyword::Def => {
                             return Err(self.err_hint(
                                 UnexpectedKeyword(kw),
@@ -499,7 +506,7 @@ impl Parser {
                     Some(TokTree::Delim(dn)) if dn.delim == Paren => {
                         self.eat(stream)?;
                         let dn = self.expect_delim()?;
-                        self.parse_actual_params(dn.stream)?
+                        self.parse_expr_list(dn.stream)?
                     }
                     _ => vec![],
                 };
@@ -544,7 +551,7 @@ impl Parser {
         })
     }
 
-    fn parse_actual_params(
+    fn parse_expr_list(
         &mut self,
         stream: TokenStream,
     ) -> PResult<Vec<ast::Expr>> {
@@ -725,13 +732,21 @@ impl Parser {
                         TokKind::Slash => ast::BinOpKind::Div,
                         TokKind::Percentage => ast::BinOpKind::Rem,
                         TokKind::Ampersand => ast::BinOpKind::BitAnd,
-                        TokKind::Pipe => ast::BinOpKind::BitOr,
                         TokKind::Caret => ast::BinOpKind::BitXor,
+                        TokKind::Pipe => ast::BinOpKind::BitOr,
+                        TokKind::Eq2 => ast::BinOpKind::Eq,
+                        TokKind::Neq => ast::BinOpKind::Neq,
+                        TokKind::Lt => ast::BinOpKind::Lt,
+                        TokKind::Gt => ast::BinOpKind::Gt,
+                        TokKind::Leq => ast::BinOpKind::Leq,
+                        TokKind::Geq => ast::BinOpKind::Geq,
                         TokKind::Lt2 => ast::BinOpKind::Shl,
                         TokKind::Gt2 => ast::BinOpKind::Shr,
                         _ => {
+                            let kind = token.kind.clone();
+                            self.eat(stream)?; // invalid token
                             return Err(self.err_hint(
-                                UnexpectedToken(token.kind.clone()),
+                                UnexpectedToken(kind),
                                 "expected binary operator",
                             ));
                         }

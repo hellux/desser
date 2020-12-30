@@ -17,6 +17,7 @@ pub type Block = Vec<Stmt>;
 pub enum Stmt {
     Field(Field),
     If(IfStmt),
+    Constrain(Vec<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -126,6 +127,12 @@ pub enum BinOpKind {
     BitAnd,
     BitXor,
     BitOr,
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Leq,
+    Geq,
     Shl,
     Shr,
 }
@@ -139,14 +146,20 @@ pub struct UnOp {
 #[derive(Clone, Copy, Debug)]
 pub enum UnOpKind {
     Neg,
+    Not,
 }
 
 impl BinOpKind {
     pub fn fixity(&self) -> (u8, u8) {
         match self {
-            BinOpKind::Mul | BinOpKind::Div | BinOpKind::Rem => (11, 12),
-            BinOpKind::Add | BinOpKind::Sub => (9, 10),
-            BinOpKind::Shl | BinOpKind::Shr => (7, 8),
+            BinOpKind::Mul | BinOpKind::Div | BinOpKind::Rem => (15, 16),
+            BinOpKind::Add | BinOpKind::Sub => (13, 14),
+            BinOpKind::Shl | BinOpKind::Shr => (11, 12),
+            BinOpKind::Lt
+            | BinOpKind::Gt
+            | BinOpKind::Leq
+            | BinOpKind::Geq => (9, 10),
+            BinOpKind::Eq | BinOpKind::Neq => (7, 8),
             BinOpKind::BitAnd => (5, 6),
             BinOpKind::BitXor => (3, 4),
             BinOpKind::BitOr => (1, 2),
@@ -157,7 +170,7 @@ impl BinOpKind {
 impl UnOpKind {
     pub fn fixity(&self) -> u8 {
         match self {
-            UnOpKind::Neg => 13,
+            UnOpKind::Neg | UnOpKind::Not => 17,
         }
     }
 }

@@ -48,9 +48,9 @@ pub enum TokKind {
     Slash,
     Percentage,
     Caret,
+    Exclamation,
     Question,
     Tilde,
-    Not,
 
     Lt,
     Gt,
@@ -64,6 +64,7 @@ pub enum TokKind {
     Pipe2,
     Leq,
     Geq,
+    Neq,
 
     Unknown,
     Eof,
@@ -81,6 +82,7 @@ pub enum Keyword {
     Def,
     If,
     Else,
+    Constrain,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -207,12 +209,13 @@ impl<'a> TokenCooker<'a> {
             raw::TokenKind::Pipe2 => Some(Pipe2),
             raw::TokenKind::Leq => Some(Leq),
             raw::TokenKind::Geq => Some(Geq),
+            raw::TokenKind::Neq => Some(Neq),
 
             raw::TokenKind::Minus => Some(Minus),
             raw::TokenKind::Plus => Some(Plus),
             raw::TokenKind::Star => Some(Star),
             raw::TokenKind::Percentage => Some(Percentage),
-            raw::TokenKind::Exclamation => Some(Not),
+            raw::TokenKind::Exclamation => Some(Exclamation),
             raw::TokenKind::Question => Some(Question),
             raw::TokenKind::Slash => Some(Slash),
             raw::TokenKind::Caret => Some(Caret),
@@ -292,6 +295,7 @@ impl<'a> TokenCooker<'a> {
             "def" => Keyword(Keyword::Def),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
+            "constrain" => Keyword(Keyword::Constrain),
 
             "order" => Attr(Attr::Order),
 

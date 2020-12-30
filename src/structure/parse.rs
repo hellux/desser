@@ -22,13 +22,17 @@ pub fn parse_structure<'a, R: BufRead + Seek>(
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum SErrorKind {
-    EndOfFile(u64, u64),
+    // errors from spec (could be checked without binary)
     StructNotInScope(Sym),
     IdentifierNotInScope(SymTraverse),
+    InvalidSelfReference,
+    // errors while reading binary
     InvalidValue(Val),
-    AddrBeforeBase(u64, u64),
+    EndOfFile(u64),
+    AddrBeforeBase(u64),
+    FailedConstraint,
 }
 
 #[derive(Debug)]
@@ -43,18 +47,6 @@ type SResult<T> = Result<T, SError>;
 impl Error {
     fn from(s: SError, symtab: &SymbolTable) -> Self {
         let desc = match s.kind {
-            SErrorKind::EndOfFile(addr, size) => {
-                format!(
-                    "end of file reached at {} while parsing field at {}",
-                    size, addr
-                )
-            }
-            SErrorKind::AddrBeforeBase(addr, base) => {
-                format!(
-                    "jump to {} which is before current struct base at {}",
-                    addr, base
-                )
-            }
             SErrorKind::StructNotInScope(sym) => {
                 format!("struct '{}' not in scope", symtab.name(sym))
             }
@@ -67,8 +59,28 @@ impl Error {
                         .join(".")
                 )
             }
+            SErrorKind::InvalidSelfReference => {
+                format!("self reference cannot be used here")
+            }
             SErrorKind::InvalidValue(val) => {
-                format!("value '{}' is not valid here", val)
+                format!("value '{}' is not valid here at 0x{:x}", val, s.pos / 8)
+            }
+            SErrorKind::EndOfFile(size) => {
+                format!(
+                    "end of file reached at {} while parsing field at {}",
+                    size / 8,
+                    s.pos / 8
+                )
+            }
+            SErrorKind::AddrBeforeBase(base) => {
+                format!(
+                    "jump to {:x} which is before current struct base at {:x}",
+                    s.pos / 8,
+                    base / 8
+                )
+            }
+            SErrorKind::FailedConstraint => {
+                format!("unable to match constraint at 0x{:x}", s.pos / 8)
             }
         };
         let hint = None;
@@ -216,7 +228,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
             self.pos = new_pos;
             Ok(self.pos)
         } else {
-            Err(self.err(SErrorKind::EndOfFile(new_pos / 8, self.length / 8)))
+            Err(self.err(SErrorKind::EndOfFile(self.length)))
         }
     }
 
@@ -237,6 +249,12 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                     ast::BinOpKind::BitAnd => left & right,
                     ast::BinOpKind::BitXor => left ^ right,
                     ast::BinOpKind::BitOr => left | right,
+                    ast::BinOpKind::Eq => (left == right) as Val,
+                    ast::BinOpKind::Neq => (left != right) as Val,
+                    ast::BinOpKind::Lt => (left < right) as Val,
+                    ast::BinOpKind::Gt => (left > right) as Val,
+                    ast::BinOpKind::Leq => (left <= right) as Val,
+                    ast::BinOpKind::Geq => (left >= right) as Val,
                     ast::BinOpKind::Shl => left << right,
                     ast::BinOpKind::Shr => left >> right,
                 })
@@ -245,6 +263,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let expr = self.eval(&unop.expr)?;
                 Ok(match unop.kind {
                     ast::UnOpKind::Neg => -expr,
+                    ast::UnOpKind::Not => if expr == 0 { 1 } else { 0 },
                 })
             }
         };
@@ -295,13 +314,9 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
 
                 let offset =
                     self.eval(expr)? as u64 * if loc.bitwise { 1 } else { 8 };
-                let new_pos = base + offset;
-                if new_pos >= base {
-                    self.pos = new_pos;
-                } else {
-                    return Err(
-                        self.err(SErrorKind::AddrBeforeBase(new_pos, base))
-                    );
+                self.pos = base + offset;
+                if self.pos < base {
+                    return Err(self.err(SErrorKind::AddrBeforeBase(base)));
                 }
             }
             None => {}
@@ -317,15 +332,18 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
 
     fn parse_array(
         &mut self,
-        kind: &ast::FieldType,
+        ty: &ast::FieldType,
         size: &ast::ArraySize,
     ) -> SResult<Vec<StructFieldKind>> {
         let mut members = Vec::new();
 
-        let max_size = match size {
-            ast::ArraySize::Exactly(n) => Some(self.eval(n)?),
-            ast::ArraySize::Within(_, n) => Some(self.eval(n)?),
-            ast::ArraySize::AtLeast(_) => None,
+        let (min_size, max_size) = match size {
+            ast::ArraySize::Exactly(n) => {
+                let n = self.eval(n)?;
+                (n, Some(n))
+            }
+            ast::ArraySize::Within(a, b) => (self.eval(a)?, Some(self.eval(b)?)),
+            ast::ArraySize::AtLeast(n) => (self.eval(n)?, None),
         };
 
         let mut n = 0;
@@ -336,12 +354,22 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 }
             }
 
-            self.goto(&kind.loc)?;
-            self.align(&kind.alignment)?;
-            let (member, _) = self.parse_field_kind(kind)?;
-            members.push(member);
+            let start = self.pos;
 
-            // TODO stop on invalid member
+            // parse until constraint fails or max num is reached
+            match self.parse_field_kind(ty) {
+                Ok((member, _)) => members.push(member),
+                Err(e) if e.kind == SErrorKind::FailedConstraint => {
+                    if n >= min_size {
+                        self.pos = start;
+                        break
+                    } else {
+                        return Err(e)
+                    }
+                }
+                Err(e) => return Err(e)
+            }
+
             n += 1;
         }
 
@@ -376,15 +404,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         for s in block {
             match s {
                 ast::Stmt::Field(f) => {
-                    let (field, ss_opt) = self.parse_field(&f)?;
-                    if let Some(id) = f.id {
-                        if let Some(ss) = ss_opt {
-                            self.scope.ns().insert_struct(id, ss);
-                        } else if let StructFieldKind::Prim(ptr) = &field.kind
-                        {
-                            self.scope.ns().insert_pointer(id, ptr.clone());
-                        }
-                    }
+                    let field = self.parse_field(&f)?;
                     fields.push((f.id.clone(), field));
                 }
                 ast::Stmt::If(if_stmt) => {
@@ -406,6 +426,14 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                     };
 
                     fields.append(&mut self.parse_block(body)?);
+                }
+                ast::Stmt::Constrain(exprs) => {
+                    for expr in exprs {
+                        let res = self.eval(expr)?;
+                        if res == 0 {
+                            return Err(self.err(SErrorKind::FailedConstraint));
+                        }
+                    }
                 }
             }
         }
@@ -447,7 +475,10 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         &mut self,
         ty: &ast::FieldType,
     ) -> SResult<(StructFieldKind, Option<FieldNamespace>)> {
-        Ok(match &ty.kind {
+        self.goto(&ty.loc)?;
+        self.align(&ty.alignment)?;
+
+        let kind = match &ty.kind {
             ast::FieldKind::Prim(apty) => {
                 let spty = self.convert_prim(&apty)?;
                 let ptr = Ptr {
@@ -479,15 +510,21 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
     fn parse_field(
         &mut self,
         field: &ast::Field,
-    ) -> SResult<(StructField, Option<FieldNamespace>)> {
+    ) -> SResult<StructField> {
         self.span = field.span;
 
-        self.goto(&field.ty.loc)?;
-        self.align(&field.ty.alignment)?;
+        let (kind, ss_opt) = self.parse_field_kind(&field.ty)?;
 
-        let (kind, ss) = self.parse_field_kind(&field.ty)?;
+        if let Some(id) = field.id {
+            if let Some(ss) = ss_opt {
+                self.scope.ns().insert_struct(id, ss);
+            } else if let StructFieldKind::Prim(ptr) = &kind
+            {
+                self.scope.ns().insert_pointer(id, ptr.clone());
+            }
+        }
 
-        Ok((StructField { kind }, ss))
+        Ok(StructField { kind })
     }
 
     fn err(&self, kind: SErrorKind) -> SError {

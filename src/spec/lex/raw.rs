@@ -44,6 +44,7 @@ pub enum TokenKind {
     Pipe2,
     Leq,
     Geq,
+    Neq,
 
     Unknown,
 }
@@ -184,6 +185,13 @@ impl Cursor<'_> {
                 }
                 _ => Gt,
             },
+            '!' => match self.peek() {
+                '=' => {
+                    self.eat();
+                    Neq
+                }
+                _ => Exclamation,
+            },
             '&' => match self.peek() {
                 '&' => {
                     self.eat();
@@ -208,7 +216,6 @@ impl Cursor<'_> {
             '}' => CloseBrace,
             '[' => OpenBracket,
             ']' => CloseBracket,
-            '!' => Exclamation,
             '?' => Question,
             '-' => Minus,
             '+' => Plus,
