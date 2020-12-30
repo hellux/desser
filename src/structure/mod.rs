@@ -33,7 +33,7 @@ impl PrimType {
 #[derive(Debug)]
 pub enum StructFieldKind {
     Prim(Ptr),
-    Array(Vec<StructFieldKind>),
+    Array(u64, Vec<(u64, StructFieldKind)>),
     Struct(Struct),
 }
 
@@ -44,6 +44,7 @@ pub struct StructField {
 
 #[derive(Debug)]
 pub struct Struct {
+    pub start: u64,
     pub size: u64,
     pub fields: Vec<(Option<Sym>, StructField)>,
 }
@@ -54,18 +55,12 @@ pub struct StructuredFile {
     pub root: Struct,
 }
 
-impl Struct {
-    pub fn last(&self) -> Option<&Ptr> {
-        self.fields.last().and_then(|(_, f)| f.kind.last())
-    }
-}
-
 impl StructFieldKind {
     pub fn is_leaf(&self) -> bool {
         match self {
             StructFieldKind::Prim(_) => true,
-            StructFieldKind::Array(kinds) => {
-                if let StructFieldKind::Prim(ptr) = &kinds[0] {
+            StructFieldKind::Array(_, kinds) => {
+                if let Some(StructFieldKind::Prim(ptr)) = kinds.get(0).map(|(_, k)| k) {
                     if let PrimType::Char = ptr.pty {
                         true
                     } else {
@@ -79,21 +74,11 @@ impl StructFieldKind {
         }
     }
 
-    pub fn last(&self) -> Option<&Ptr> {
-        match self {
-            StructFieldKind::Prim(ptr) => Some(ptr),
-            StructFieldKind::Array(kinds) => {
-                kinds.last().and_then(|k| k.last())
-            }
-            StructFieldKind::Struct(st) => st.last(),
-        }
-    }
-
     pub fn start(&self) -> u64 {
         match self {
             StructFieldKind::Prim(ptr) => ptr.start,
-            StructFieldKind::Array(kinds) => kinds[0].start(),
-            StructFieldKind::Struct(st) => st.fields[0].1.kind.start(),
+            StructFieldKind::Array(start, _) => *start,
+            StructFieldKind::Struct(st) => st.start,
         }
     }
 

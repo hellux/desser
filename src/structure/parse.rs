@@ -361,7 +361,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         &mut self,
         ty: &ast::FieldType,
         size: &ast::ArraySize,
-    ) -> SResult<Vec<StructFieldKind>> {
+    ) -> SResult<Vec<(u64, StructFieldKind)>> {
         let mut members = Vec::new();
 
         let (min_size, max_size) = match size {
@@ -375,9 +375,10 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
             ast::ArraySize::AtLeast(n) => (self.eval(n)?, None),
         };
 
+        let mut i = 0;
         loop {
             if let Some(m) = max_size {
-                if members.len() >= m as usize {
+                if i >= m as u64 {
                     break;
                 }
             }
@@ -386,11 +387,15 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
 
             // parse until constraint fails or max num is reached
             let (kind, mut ss) = match self.parse_field_kind(ty) {
-                Ok(field) => field,
+                Ok(Some(field)) => field,
+                Ok(None) => {
+                    i += 1;
+                    continue;
+                }
                 Err(e) => match e.kind {
                     SErrorKind::FailedConstraint
                     | SErrorKind::EndOfFile(_)
-                        if members.len() >= min_size as usize =>
+                        if i >= min_size as u64 =>
                     {
                         self.seek(start)?;
                         break;
@@ -404,7 +409,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let res = self.eval(constraint)?;
                 ss = self.scope.ns().remove(self.sym_self);
                 if res == 0 {
-                    if members.len() >= min_size as usize {
+                    if i >= min_size as u64 {
                         self.seek(start)?;
                         break;
                     } else {
@@ -415,7 +420,8 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
 
             // TODO add subspace to scope
 
-            members.push(kind);
+            members.push((i, kind));
+            i += 1
         }
 
         Ok(members)
@@ -438,7 +444,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
 
         let ns = self.scope.exit_struct();
 
-        Ok((Struct { size, fields }, ns))
+        Ok((Struct { start, size, fields }, ns))
     }
 
     fn parse_block(
@@ -449,8 +455,11 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         for s in block {
             match s {
                 ast::Stmt::Field(f) => {
-                    let field = self.parse_field(&f)?;
-                    fields.push((f.id.clone(), field));
+                    if let Some(field) = self.parse_field(&f)? {
+                        if !f.hidden {
+                            fields.push((f.id.clone(), field));
+                        }
+                    }
                 }
                 ast::Stmt::If(if_stmt) => {
                     let body = if self.eval(&if_stmt.cond)? != 0 {
@@ -519,7 +528,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
     fn parse_field_kind(
         &mut self,
         ty: &ast::FieldType,
-    ) -> SResult<(StructFieldKind, Option<FieldNamespace>)> {
+    ) -> SResult<Option<(StructFieldKind, Option<FieldNamespace>)>> {
         self.seek_loc(&ty.loc)?;
         self.align(&ty.alignment)?;
 
@@ -532,10 +541,10 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                     byte_order: ty.byte_order,
                 };
                 self.parse_prim(&ptr)?;
-                (StructFieldKind::Prim(ptr), None)
+                Some((StructFieldKind::Prim(ptr), None))
             }
             ast::FieldKind::Array(ty, count) => {
-                (StructFieldKind::Array(self.parse_array(ty, count)?), None)
+                Some((StructFieldKind::Array(self.pos, self.parse_array(ty, count)?), None))
             }
             ast::FieldKind::Struct(id, params) => {
                 let mut args = Vec::new();
@@ -546,18 +555,25 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                     .scope
                     .get_spec(*id)
                     .ok_or(self.err(SErrorKind::StructNotInScope(*id)))?;
-                let (st, ss) = self.parse_struct(struct_spec, &args)?;
-                (StructFieldKind::Struct(st), Some(ss))
+                let (mut st, ss) = self.parse_struct(struct_spec, &args)?;
+                match st.fields.len() {
+                    0 => None,
+                    1 => Some((st.fields.remove(0).1.kind, None)),
+                    _ => Some((StructFieldKind::Struct(st), Some(ss)))
+                }
             }
         };
 
         Ok(kind)
     }
 
-    fn parse_field(&mut self, field: &ast::Field) -> SResult<StructField> {
+    fn parse_field(&mut self, field: &ast::Field) -> SResult<Option<StructField>> {
         self.span = field.span;
 
-        let (kind, mut ss_opt) = self.parse_field_kind(&field.ty)?;
+        let (kind, mut ss_opt) = match self.parse_field_kind(&field.ty)? {
+            Some(k) => k,
+            None => return Ok(None),
+        };
 
         if let Some(constraint) = &field.ty.constraint {
             self.scope.ns().insert_field(self.sym_self, &kind, ss_opt);
@@ -572,7 +588,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
             self.scope.ns().insert_field(id, &kind, ss_opt);
         }
 
-        Ok(StructField { kind })
+        Ok(Some(StructField { kind }))
     }
 
     fn err(&self, kind: SErrorKind) -> SError {

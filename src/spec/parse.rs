@@ -399,13 +399,18 @@ impl Parser {
         let span = stream.span();
         let ty = self.parse_field_type(&mut stream)?;
         let id = self.parse_field_ident(&mut stream)?;
+        let hidden = if let Some(sym) = id {
+            self.symtab.name(sym).starts_with("_")
+        } else {
+            false
+        };
         self.assert_eof(&stream, "expected comma after field declaration");
 
         Ok(ast::Field {
             ty,
             id,
-            //constraint,
             span,
+            hidden,
         })
     }
 

@@ -46,6 +46,7 @@ pub struct Field {
     pub ty: FieldType,
     pub id: Option<Sym>,
     pub span: Span,
+    pub hidden: bool,
 }
 
 /* Field types */
