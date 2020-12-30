@@ -1,4 +1,4 @@
-use crate::{Sym, SymbolTable, AddrBase};
+use crate::{AddrBase, Sym, SymbolTable};
 
 use super::raw;
 use super::Span;
@@ -90,6 +90,7 @@ pub enum Attr {
     Align(bool),
     Location { base: AddrBase, bitwise: bool },
     Order,
+    Constraint,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -297,17 +298,36 @@ impl<'a> TokenCooker<'a> {
             "else" => Keyword(Keyword::Else),
             "constrain" => Keyword(Keyword::Constrain),
 
+            "constraint" => Attr(Attr::Constraint),
             "order" => Attr(Attr::Order),
 
             "align" => Attr(Attr::Align(false)),
-            "addr" => Attr(Attr::Location{base: AddrBase::Absolute, bitwise: false}),
-            "skip" => Attr(Attr::Location{base: AddrBase::Relative, bitwise: false}),
-            "offset" => Attr(Attr::Location{base: AddrBase::Local, bitwise: false}),
+            "addr" => Attr(Attr::Location {
+                base: AddrBase::Absolute,
+                bitwise: false,
+            }),
+            "skip" => Attr(Attr::Location {
+                base: AddrBase::Relative,
+                bitwise: false,
+            }),
+            "offset" => Attr(Attr::Location {
+                base: AddrBase::Local,
+                bitwise: false,
+            }),
 
             "balign" => Attr(Attr::Align(true)),
-            "baddr" => Attr(Attr::Location{base: AddrBase::Absolute, bitwise: true}),
-            "bskip" => Attr(Attr::Location{base: AddrBase::Relative, bitwise: true}),
-            "boffset" => Attr(Attr::Location{base: AddrBase::Local, bitwise: true}),
+            "baddr" => Attr(Attr::Location {
+                base: AddrBase::Absolute,
+                bitwise: true,
+            }),
+            "bskip" => Attr(Attr::Location {
+                base: AddrBase::Relative,
+                bitwise: true,
+            }),
+            "boffset" => Attr(Attr::Location {
+                base: AddrBase::Local,
+                bitwise: true,
+            }),
 
             id => Ident(self.symtab.insert(id)),
         }

@@ -1,4 +1,4 @@
-use crate::{Order, AddrBase, StructSpecs, Sym, SymTraverse};
+use crate::{AddrBase, Order, StructSpecs, Sym, SymTraverse};
 
 use super::Span;
 
@@ -57,6 +57,7 @@ pub struct FieldType {
     //pub bit_order: Order,
     pub loc: Location,
     pub alignment: Alignment,
+    pub constraint: Option<Expr>,
 }
 
 #[derive(Clone, Debug)]

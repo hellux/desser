@@ -88,12 +88,16 @@ pub struct SymbolTable {
     arr: Vec<String>,
 }
 
+pub const SELF_NAME: &str = "self";
+
 impl SymbolTable {
     fn new() -> Self {
-        SymbolTable {
+        let mut tbl = SymbolTable {
             map: HashMap::new(),
             arr: Vec::new(),
-        }
+        };
+        tbl.insert(SELF_NAME);
+        tbl
     }
 
     pub fn name(&self, sym: Sym) -> &str {
@@ -109,5 +113,9 @@ impl SymbolTable {
             self.map.insert(String::from(name), sym);
             sym
         }
+    }
+
+    fn sym_self(&self) -> Sym {
+        *self.map.get(SELF_NAME).unwrap()
     }
 }

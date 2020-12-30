@@ -3,14 +3,17 @@ use std::io::{BufRead, Seek, SeekFrom};
 
 use super::*;
 use crate::spec::ast;
-use crate::{AddrBase, Error, ErrorType, Span, StructSpecs, Sym, SymTraverse, SymbolTable};
+use crate::{
+    AddrBase, Error, ErrorType, Span, StructSpecs, Sym, SymTraverse,
+    SymbolTable,
+};
 
 pub fn parse_structure<'a, R: BufRead + Seek>(
     f: &'a mut R,
     root_spec: &'a ast::Struct,
     symtab: &SymbolTable,
 ) -> Result<StructuredFile, Error> {
-    let mut fp = FileParser::new(f);
+    let mut fp = FileParser::new(f, symtab);
     let (root, _) = match fp.parse_struct(root_spec, &vec![]) {
         Ok(r) => r,
         Err(e) => return Err(Error::from(e, symtab)),
@@ -27,7 +30,6 @@ enum SErrorKind {
     // errors from spec (could be checked without binary)
     StructNotInScope(Sym),
     IdentifierNotInScope(SymTraverse),
-    InvalidSelfReference,
     // errors while reading binary
     InvalidValue(Val),
     EndOfFile(u64),
@@ -59,11 +61,12 @@ impl Error {
                         .join(".")
                 )
             }
-            SErrorKind::InvalidSelfReference => {
-                format!("self reference cannot be used here")
-            }
             SErrorKind::InvalidValue(val) => {
-                format!("value '{}' is not valid here at 0x{:x}", val, s.pos / 8)
+                format!(
+                    "value '{}' is not valid here at 0x{:x}",
+                    val,
+                    s.pos / 8
+                )
             }
             SErrorKind::EndOfFile(size) => {
                 format!(
@@ -137,12 +140,26 @@ impl FieldNamespace {
         self.0.insert(sym, Name::Field(Variable::Direct(val)));
     }
 
-    fn insert_pointer(&mut self, sym: Sym, ptr: Ptr) {
-        self.0.insert(sym, Name::Field(Variable::Indirect(ptr)));
+    fn insert_field(
+        &mut self,
+        sym: Sym,
+        kind: &StructFieldKind,
+        ns: Option<FieldNamespace>,
+    ) {
+        if let Some(ss) = ns {
+            self.0.insert(sym, Name::Struct(ss));
+        } else if let StructFieldKind::Prim(ptr) = kind {
+            self.0
+                .insert(sym, Name::Field(Variable::Indirect(ptr.clone())));
+        }
     }
 
-    fn insert_struct(&mut self, sym: Sym, ns: FieldNamespace) {
-        self.0.insert(sym, Name::Struct(ns));
+    fn remove(&mut self, sym: Sym) -> Option<FieldNamespace> {
+        if let Name::Struct(ns) = self.0.remove(&sym).unwrap() {
+            Some(ns)
+        } else {
+            None
+        }
     }
 }
 
@@ -184,16 +201,24 @@ impl<'a> Scope<'a> {
         });
     }
 
+    fn current(&self) -> &CurrentStruct<'a> {
+        self.0.last().unwrap()
+    }
+
+    fn current_mut(&mut self) -> &mut CurrentStruct<'a> {
+        self.0.last_mut().unwrap()
+    }
+
     fn exit_struct(&mut self) -> FieldNamespace {
         self.0.pop().unwrap().fields
     }
 
     fn base(&self) -> u64 {
-        self.0.last().unwrap().base
+        self.current().base
     }
 
     fn ns(&mut self) -> &mut FieldNamespace {
-        &mut self.0.last_mut().unwrap().fields
+        &mut self.current_mut().fields
     }
 }
 
@@ -203,10 +228,11 @@ struct FileParser<'a, R> {
     pos: u64,
     length: u64,
     scope: Scope<'a>,
+    sym_self: Sym,
 }
 
 impl<'a, R: BufRead + Seek> FileParser<'a, R> {
-    fn new(f: &'a mut R) -> Self {
+    fn new(f: &'a mut R, symtab: &SymbolTable) -> Self {
         let length = f.seek(SeekFrom::End(0)).unwrap() * 8;
         FileParser {
             f,
@@ -214,22 +240,59 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
             pos: 0,
             length,
             scope: Scope::new(),
+            sym_self: symtab.sym_self(),
         }
     }
 
-    fn seek(&mut self, from: SeekFrom) -> SResult<u64> {
-        let new_pos = match from {
-            SeekFrom::Start(addr) => addr,
-            SeekFrom::Current(rel_addr) => (self.pos as i64 + rel_addr) as u64,
-            SeekFrom::End(rel_addr) => (self.length as i64 + rel_addr) as u64,
-        };
-
-        if new_pos <= self.length {
-            self.pos = new_pos;
-            Ok(self.pos)
+    fn seek(&mut self, pos: u64) -> SResult<()> {
+        self.pos = pos;
+        if self.pos <= self.length {
+            Ok(())
         } else {
             Err(self.err(SErrorKind::EndOfFile(self.length)))
         }
+    }
+
+    fn seek_loc(&mut self, loc: &ast::Location) -> SResult<()> {
+        let base = self.scope.base();
+        match &loc.expr {
+            Some(expr) => {
+                let base = match loc.base {
+                    AddrBase::Absolute => 0,
+                    AddrBase::Relative => self.pos,
+                    AddrBase::Local => base,
+                };
+
+                let offset =
+                    self.eval(expr)? as u64 * if loc.bitwise { 1 } else { 8 };
+                self.seek(base + offset)?;
+                if self.pos < base {
+                    return Err(self.err(SErrorKind::AddrBeforeBase(base)));
+                }
+            }
+            None => {}
+        };
+
+        Ok(())
+    }
+
+    fn align(&mut self, alignment: &ast::Alignment) -> SResult<()> {
+        match &alignment.expr {
+            Some(expr) => {
+                let al = self.eval(expr)?;
+                if al > 0 {
+                    let al = al as u64 * if alignment.bitwise { 1 } else { 8 };
+                    if self.pos % al > 0 {
+                        self.pos += al - self.pos % al
+                    }
+                } else {
+                    return Err(self.err(SErrorKind::InvalidValue(al)));
+                }
+            }
+            None => {}
+        };
+
+        Ok(())
     }
 
     fn eval(&mut self, expr: &ast::Expr) -> SResult<Val> {
@@ -263,7 +326,13 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let expr = self.eval(&unop.expr)?;
                 Ok(match unop.kind {
                     ast::UnOpKind::Neg => -expr,
-                    ast::UnOpKind::Not => if expr == 0 { 1 } else { 0 },
+                    ast::UnOpKind::Not => {
+                        if expr == 0 {
+                            1
+                        } else {
+                            0
+                        }
+                    }
                 })
             }
         };
@@ -283,50 +352,8 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         }
     }
 
-    fn align(&mut self, alignment: &ast::Alignment) -> SResult<()> {
-        match &alignment.expr {
-            Some(expr) => {
-                let al = self.eval(expr)?;
-                if al > 0 {
-                    let al = al as u64 * if alignment.bitwise { 1 } else { 8 };
-                    if self.pos % al > 0 {
-                        self.pos += al - self.pos % al
-                    }
-                } else {
-                    return Err(self.err(SErrorKind::InvalidValue(al)));
-                }
-            }
-            None => {}
-        };
-
-        Ok(())
-    }
-
-    fn goto(&mut self, loc: &ast::Location) -> SResult<()> {
-        let base = self.scope.base();
-        match &loc.expr {
-            Some(expr) => {
-                let base = match loc.base {
-                    AddrBase::Absolute => 0,
-                    AddrBase::Relative => self.pos,
-                    AddrBase::Local => base,
-                };
-
-                let offset =
-                    self.eval(expr)? as u64 * if loc.bitwise { 1 } else { 8 };
-                self.pos = base + offset;
-                if self.pos < base {
-                    return Err(self.err(SErrorKind::AddrBeforeBase(base)));
-                }
-            }
-            None => {}
-        };
-
-        Ok(())
-    }
-
     fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
-        self.seek(SeekFrom::Start(ptr.start + ptr.pty.size() as u64))?;
+        self.seek(ptr.start + ptr.pty.size() as u64)?;
         Ok(())
     }
 
@@ -342,14 +369,15 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let n = self.eval(n)?;
                 (n, Some(n))
             }
-            ast::ArraySize::Within(a, b) => (self.eval(a)?, Some(self.eval(b)?)),
+            ast::ArraySize::Within(a, b) => {
+                (self.eval(a)?, Some(self.eval(b)?))
+            }
             ast::ArraySize::AtLeast(n) => (self.eval(n)?, None),
         };
 
-        let mut n = 0;
         loop {
             if let Some(m) = max_size {
-                if n >= m {
+                if members.len() >= m as usize {
                     break;
                 }
             }
@@ -357,20 +385,37 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
             let start = self.pos;
 
             // parse until constraint fails or max num is reached
-            match self.parse_field_kind(ty) {
-                Ok((member, _)) => members.push(member),
-                Err(e) if e.kind == SErrorKind::FailedConstraint => {
-                    if n >= min_size {
-                        self.pos = start;
-                        break
+            let (kind, mut ss) = match self.parse_field_kind(ty) {
+                Ok(field) => field,
+                Err(e) => match e.kind {
+                    SErrorKind::FailedConstraint
+                    | SErrorKind::EndOfFile(_)
+                        if members.len() >= min_size as usize =>
+                    {
+                        self.seek(start)?;
+                        break;
+                    }
+                    _ => return Err(e),
+                },
+            };
+
+            if let Some(constraint) = &ty.constraint {
+                self.scope.ns().insert_field(self.sym_self, &kind, ss);
+                let res = self.eval(constraint)?;
+                ss = self.scope.ns().remove(self.sym_self);
+                if res == 0 {
+                    if members.len() >= min_size as usize {
+                        self.seek(start)?;
+                        break;
                     } else {
-                        return Err(e)
+                        return Err(self.err(SErrorKind::FailedConstraint));
                     }
                 }
-                Err(e) => return Err(e)
             }
 
-            n += 1;
+            // TODO add subspace to scope
+
+            members.push(kind);
         }
 
         Ok(members)
@@ -475,7 +520,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         &mut self,
         ty: &ast::FieldType,
     ) -> SResult<(StructFieldKind, Option<FieldNamespace>)> {
-        self.goto(&ty.loc)?;
+        self.seek_loc(&ty.loc)?;
         self.align(&ty.alignment)?;
 
         let kind = match &ty.kind {
@@ -504,24 +549,27 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let (st, ss) = self.parse_struct(struct_spec, &args)?;
                 (StructFieldKind::Struct(st), Some(ss))
             }
-        })
+        };
+
+        Ok(kind)
     }
 
-    fn parse_field(
-        &mut self,
-        field: &ast::Field,
-    ) -> SResult<StructField> {
+    fn parse_field(&mut self, field: &ast::Field) -> SResult<StructField> {
         self.span = field.span;
 
-        let (kind, ss_opt) = self.parse_field_kind(&field.ty)?;
+        let (kind, mut ss_opt) = self.parse_field_kind(&field.ty)?;
+
+        if let Some(constraint) = &field.ty.constraint {
+            self.scope.ns().insert_field(self.sym_self, &kind, ss_opt);
+            let res = self.eval(constraint)?;
+            ss_opt = self.scope.ns().remove(self.sym_self);
+            if res == 0 {
+                return Err(self.err(SErrorKind::FailedConstraint));
+            }
+        }
 
         if let Some(id) = field.id {
-            if let Some(ss) = ss_opt {
-                self.scope.ns().insert_struct(id, ss);
-            } else if let StructFieldKind::Prim(ptr) = &kind
-            {
-                self.scope.ns().insert_pointer(id, ptr.clone());
-            }
+            self.scope.ns().insert_field(id, &kind, ss_opt);
         }
 
         Ok(StructField { kind })

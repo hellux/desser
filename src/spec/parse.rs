@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Error, ErrorType, Order, AddrBase, Sym, SymbolTable};
+use crate::{AddrBase, Error, ErrorType, Order, Sym, SymbolTable};
 
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
@@ -456,6 +456,7 @@ impl Parser {
             base: AddrBase::Absolute,
             bitwise: false,
         };
+        let mut constraint = None;
         let attrs = self.parse_attrs(stream)?;
         for (attr, mut args) in attrs {
             match attr {
@@ -465,13 +466,16 @@ impl Parser {
                         bitwise,
                     }
                 }
-                Attr::Location{base, bitwise} => {
+                Attr::Location { base, bitwise } => {
                     let expr = Some(self.parse_expr(args.remove(0))?);
                     loc = ast::Location {
                         expr,
                         base,
                         bitwise,
                     };
+                }
+                Attr::Constraint => {
+                    constraint = Some(self.parse_expr(args.remove(0))?);
                 }
                 Attr::Order => {
                     let mut arg0 = args.remove(0);
@@ -548,6 +552,7 @@ impl Parser {
             byte_order,
             loc,
             alignment,
+            constraint,
         })
     }
 
