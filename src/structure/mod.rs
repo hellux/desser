@@ -12,26 +12,7 @@ pub struct Ptr {
     pub byte_order: Order,
 }
 
-#[derive(Copy, Clone, Debug)]
-pub enum PrimType {
-    Signed(u8),
-    Unsigned(u8),
-    Float(u8, u8), // exponent, mantissa
-    BitVec(u8),
-    Char,
-    U8,
-    S8,
-    U16,
-    S16,
-    U32,
-    S32,
-    U64,
-    S64,
-    U128,
-    S128,
-    F32,
-    F64,
-}
+type PrimType = crate::PrimType<u8>;
 
 impl PrimType {
     pub fn size(&self) -> u8 {

@@ -19,6 +19,27 @@ pub enum AddrBase {
     Local,    // 0 at current struct base
 }
 
+#[derive(Clone, Debug)]
+pub enum PrimType<T> {
+    Signed(T),
+    Unsigned(T),
+    Float(T, T), // exponent, mantissa
+    BitVec(T),
+    Char,
+    U8,
+    S8,
+    U16,
+    S16,
+    U32,
+    S32,
+    U64,
+    S64,
+    U128,
+    S128,
+    F32,
+    F64,
+}
+
 #[derive(Debug)]
 pub struct Error {
     pub span: Span,

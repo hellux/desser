@@ -74,26 +74,7 @@ pub enum ArraySize {
     AtLeast(Expr),
 }
 
-#[derive(Clone, Debug)]
-pub enum PrimType {
-    Signed(Expr),
-    Unsigned(Expr),
-    Float(Expr, Expr), // exponent, mantissa
-    BitVec(Expr),
-    Char,
-    U8,
-    S8,
-    U16,
-    S16,
-    U32,
-    S32,
-    U64,
-    S64,
-    U128,
-    S128,
-    F32,
-    F64,
-}
+pub type PrimType = crate::PrimType<Expr>;
 
 /* Expressions */
 
