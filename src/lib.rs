@@ -3,13 +3,20 @@ use std::collections::HashMap;
 mod spec;
 mod structure;
 
-pub use spec::{Span, SpecFile, parse_spec};
+pub use spec::{parse_spec, Span, SpecFile};
 pub use structure::*;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Order {
     LittleEndian,
     BigEndian,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AddrBase {
+    Absolute, // 0 at file start
+    Relative, // 0 at current position
+    Local,    // 0 at current struct base
 }
 
 #[derive(Debug)]
@@ -73,7 +80,7 @@ pub enum ErrorType {
 
 pub type Sym = u16;
 pub type SymTraverse = Vec<Sym>; // member access, e.g. sym_a.sym_b.x
-type StructScope = HashMap<Sym, spec::ast::Struct>;
+type StructSpecs = HashMap<Sym, spec::ast::Struct>;
 
 #[derive(Clone, Debug)]
 pub struct SymbolTable {

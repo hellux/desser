@@ -1,4 +1,4 @@
-use crate::{Order, StructScope, Sym, SymTraverse};
+use crate::{Order, AddrBase, StructSpecs, Sym, SymTraverse};
 
 use super::Span;
 
@@ -7,7 +7,7 @@ use super::Span;
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub parameters: Vec<Sym>,
-    pub structs: StructScope,
+    pub structs: StructSpecs,
     pub block: Block,
 }
 
@@ -28,6 +28,19 @@ pub struct IfStmt {
 }
 
 #[derive(Clone, Debug)]
+pub struct Location {
+    pub expr: Option<Expr>,
+    pub base: AddrBase,
+    pub bitwise: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Alignment {
+    pub expr: Option<Expr>,
+    pub bitwise: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct Field {
     pub ty: FieldType,
     pub id: Option<Sym>,
@@ -40,7 +53,9 @@ pub struct Field {
 pub struct FieldType {
     pub kind: FieldKind,
     pub byte_order: Order,
-    pub alignment: Option<Expr>,
+    //pub bit_order: Order,
+    pub loc: Location,
+    pub alignment: Alignment,
 }
 
 #[derive(Clone, Debug)]

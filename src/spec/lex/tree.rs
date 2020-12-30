@@ -60,6 +60,20 @@ impl TokenStream {
         Span(start, end)
     }
 
+    pub fn split_on(mut self, sep: &TokKind) -> Vec<Self> {
+        let mut streams = Vec::new();
+
+        while self.not_empty() {
+            let stream = self.eat_until(sep);
+            if stream.not_empty() {
+                self.eat(); // throw away separator
+            }
+            streams.push(stream);
+        }
+
+        streams
+    }
+
     pub fn eat_while_token<P>(&mut self, pred: &mut P) -> Self
     where
         P: FnMut(&TokKind) -> bool,

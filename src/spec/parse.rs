@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Order, Error, ErrorType, Sym, SymbolTable};
+use crate::{Error, ErrorType, Order, AddrBase, Sym, SymbolTable};
 
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
@@ -402,39 +402,78 @@ impl Parser {
         })
     }
 
+    fn parse_attrs(
+        &mut self,
+        stream: &mut TokenStream,
+    ) -> PResult<Vec<(Attr, Vec<TokenStream>)>> {
+        let mut attributes = Vec::new();
+
+        loop {
+            match stream.peek() {
+                Some(TokTree::Token(Token {
+                    kind: TokKind::Attr(attr),
+                    ..
+                })) => {
+                    let attr = *attr;
+                    self.eat(stream)?; // attr name
+                    self.eat(stream)?; // arguments
+                    let dn = self.expect_delim()?;
+                    if dn.delim == Paren {
+                        attributes
+                            .push((attr, dn.stream.split_on(&TokKind::Comma)));
+                    } else {
+                        return Err(self.err_hint(
+                            Unexpected,
+                            "expected parenthesis with attribute arguments",
+                        ));
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        Ok(attributes)
+    }
+
     fn parse_field_type(
         &mut self,
         stream: &mut TokenStream,
     ) -> PResult<ast::FieldType> {
-        let mut byte_order = None;
-        let mut alignment = None;
-        let kind = loop {
-            self.eat(stream)?;
-            match self.tree.take() {
-                TokTree::Token(Token {
-                    kind: TokKind::Attr(Attr::Align),
-                    ..
-                }) => {
-                    self.eat(stream)?; // number
-                    let dn = self.expect_delim()?;
-                    if dn.delim == Paren {
-                        alignment = Some(self.parse_expr(dn.stream)?);
-                    } else {
-                        return Err(self.err_hint(
-                            Unexpected,
-                            "expected parenthesis with alignment size",
-                        ));
+        let mut byte_order = Order::LittleEndian;
+        let mut alignment = ast::Alignment {
+            expr: None,
+            bitwise: false,
+        };
+        let mut loc = ast::Location {
+            expr: None,
+            base: AddrBase::Absolute,
+            bitwise: false,
+        };
+        let attrs = self.parse_attrs(stream)?;
+        for (attr, mut args) in attrs {
+            match attr {
+                Attr::Align(bitwise) => {
+                    alignment = ast::Alignment {
+                        expr: Some(self.parse_expr(args.remove(0))?),
+                        bitwise,
                     }
                 }
-                TokTree::Token(Token {
-                    kind: TokKind::Attr(Attr::Order),
-                    ..
-                }) => {
-                    self.eat(stream)?; // le | be
-                    let order = self.expect_ident()?;
-                    byte_order = match self.symtab.name(order) {
-                        "le" => Some(Order::LittleEndian),
-                        "be" => Some(Order::BigEndian),
+                Attr::Location{base, bitwise} => {
+                    let expr = Some(self.parse_expr(args.remove(0))?);
+                    loc = ast::Location {
+                        expr,
+                        base,
+                        bitwise,
+                    };
+                }
+                Attr::Order => {
+                    let mut arg0 = args.remove(0);
+                    self.eat(&mut arg0)?;
+                    let ident = self.expect_ident()?;
+                    self.assert_eof(&arg0, "order takes only le or be");
+                    byte_order = match self.symtab.name(ident) {
+                        "le" => Order::LittleEndian,
+                        "be" => Order::BigEndian,
                         _ => {
                             return Err(
                                 self.err_hint(Unexpected, "expected le or be")
@@ -442,79 +481,78 @@ impl Parser {
                         }
                     }
                 }
-                TokTree::Token(Token {
-                    kind: TokKind::Ident(id),
-                    ..
-                }) => {
-                    let params = match stream.peek() {
-                        Some(TokTree::Delim(dn)) if dn.delim == Paren => {
-                            self.eat(stream)?;
-                            let dn = self.expect_delim()?;
-                            self.parse_actual_params(dn.stream)?
-                        }
-                        _ => vec![],
-                    };
+            }
 
-                    let parts: Vec<_> =
-                        self.symtab.name(id).split('_').collect();
-                    let ident = parts[0];
-                    let ord = parts.get(1);
-                    let kind = if let Some(kind) =
-                        alias_field_kind(ident, params.as_slice())
+            if !args.is_empty() {
+                return Err(self
+                    .err_hint(Unexpected, "too many arguments to attribute"));
+            }
+        }
+
+        self.eat(stream)?;
+        let kind = match self.tree.take() {
+            TokTree::Token(Token {
+                kind: TokKind::Ident(id),
+                ..
+            }) => {
+                let params = match stream.peek() {
+                    Some(TokTree::Delim(dn)) if dn.delim == Paren => {
+                        self.eat(stream)?;
+                        let dn = self.expect_delim()?;
+                        self.parse_actual_params(dn.stream)?
+                    }
+                    _ => vec![],
+                };
+
+                let parts: Vec<_> = self.symtab.name(id).split('_').collect();
+                let ident = parts[0];
+                let ord = parts.get(1);
+                let kind = if let Some(kind) =
+                    alias_field_kind(ident, params.as_slice())
+                {
+                    if parts.len() == 1 {
+                        kind
+                    } else if parts.len() == 2
+                        && (ord == Some(&"le") || ord == Some(&"be"))
                     {
-                        if parts.len() == 1 {
-                            kind
-                        } else if parts.len() == 2
-                            && (ord == Some(&"le") || ord == Some(&"be"))
-                        {
-                            byte_order = Some(match ord.unwrap() {
-                                &"le" => Order::LittleEndian,
-                                &"be" => Order::BigEndian,
-                                _ => unreachable!(),
-                            });
-                            kind
-                        } else {
-                            ast::FieldKind::Struct(id, params)
-                        }
+                        byte_order = match ord.unwrap() {
+                            &"le" => Order::LittleEndian,
+                            &"be" => Order::BigEndian,
+                            _ => unreachable!(),
+                        };
+                        kind
                     } else {
                         ast::FieldKind::Struct(id, params)
-                    };
+                    }
+                } else {
+                    ast::FieldKind::Struct(id, params)
+                };
 
-                    break kind;
-                }
-                TokTree::Delim(dn) if dn.delim == Bracket => {
-                    break self.parse_array_type(dn.stream)?;
-                }
-                _ => {
-                    return Err(
-                        self.err_hint(Unexpected, "expected field type")
-                    )
-                }
+                kind
             }
+            TokTree::Delim(dn) if dn.delim == Bracket => {
+                self.parse_array_type(dn.stream)?
+            }
+            _ => return Err(self.err_hint(Unexpected, "expected field type")),
         };
 
         Ok(ast::FieldType {
-            byte_order: byte_order.unwrap_or(Order::LittleEndian),
-            alignment,
             kind,
+            byte_order,
+            loc,
+            alignment,
         })
     }
 
     fn parse_actual_params(
         &mut self,
-        mut stream: TokenStream,
+        stream: TokenStream,
     ) -> PResult<Vec<ast::Expr>> {
-        let mut params = Vec::new();
-
-        while stream.not_empty() {
-            let param_stream = stream.eat_until(&TokKind::Comma);
-            if stream.not_empty() {
-                self.eat(&mut stream)?; // comma, optional if trailing
-            }
-            params.push(self.parse_expr(param_stream)?);
-        }
-
-        Ok(params)
+        stream
+            .split_on(&TokKind::Comma)
+            .into_iter()
+            .map(|s| self.parse_expr(s))
+            .collect()
     }
 
     // array ::- [<field_type>; <array_size>]

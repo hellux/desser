@@ -49,15 +49,23 @@ mod view {
         }
 
         fn prepend_addr(&mut self, kind: &StructFieldKind) -> io::Result<()> {
+            let bit = kind.start() % 8;
+            let bit_str = if bit > 0 {
+                format!(":{}", bit)
+            } else {
+                format!("  ")
+            };
+
             if kind.is_leaf() {
                 write!(
                     self.out,
-                    "{:0>l$x}    ",
+                    "{:0>l$x}{}    ",
                     kind.start() / 8,
+                    bit_str,
                     l = self.addr_len
                 )
             } else {
-                write!(self.out, "{:l$}    ", "", l = self.addr_len)
+                write!(self.out, "{:l$}", "", l = self.addr_len + 6)
             }
         }
 
@@ -76,7 +84,7 @@ mod view {
             }
 
             if level > 0 {
-                write!(self.out, "{:l$}    ", "", l = self.addr_len)?;
+                write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
                 self.out.write(&vec![b' '; 4 * (level - 1)])?;
                 self.out.write(b"}")?;
             }
@@ -113,7 +121,7 @@ mod view {
                         i += 1;
                     }
 
-                    write!(self.out, "{:l$}    ", "", l = self.addr_len)?;
+                    write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
                     self.out.write(&vec![b' '; 4 * (level - 1)])?;
                     self.out.write(b"]")?;
                 }
@@ -220,11 +228,9 @@ fn parse_options() -> Options {
 
 fn main() -> Result<(), std::io::Error> {
     let opts = parse_options();
-
     let spec_res = desser::parse_spec(&opts.spec_file);
 
     let mut errors = Vec::new();
-
     match spec_res {
         Ok((spec, symtab)) => {
             let mut binary_file = BufReader::new(opts.input_file);

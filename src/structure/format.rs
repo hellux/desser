@@ -40,7 +40,7 @@ pub fn read_bytes<R: BufRead + Seek>(
     } else {
         let size_aligned =
             (size / 8 + if size % 8 > 0 { 1 } else { 0 }) as usize;
-        let buf_aligned = le_shr(&buf, 8-end_offset as usize);
+        let buf_aligned = le_shr(&buf, 8 - end_offset as usize);
         buf_aligned
             .into_iter()
             .skip(size_bytes - size_aligned)
@@ -151,7 +151,7 @@ impl PrimType {
                 write!(out, "{}", val)
             }
             PrimType::BitVec(n) => {
-                write!(out, "{:0n$b}", le16_to_uint(data), n=*n as usize)
+                write!(out, "{:0n$b}", le16_to_uint(data), n = *n as usize)
             }
             PrimType::Char => {
                 write!(out, "{}", data[0] as char)
@@ -193,7 +193,7 @@ mod test_format {
         assert_eq!(read_bytes(8, 16, BE, &mut d1c), &[0x07, 0x03]);
         assert_eq!(read_bytes(2 * 8, 9, BE, &mut d1c), &[0x0f, 0x00]);
         assert_eq!(read_bytes(8 + 4, 4, BE, &mut d1c), &[0x03]);
-        assert_eq!(read_bytes(2*8 + 4, 12, BE, &mut d1c), &[0xf0, 0x07]);
+        assert_eq!(read_bytes(2 * 8 + 4, 12, BE, &mut d1c), &[0xf0, 0x07]);
         assert_eq!(read_bytes(0, 16, LE, &mut d1c), &[0xff, 0x03]);
     }
 

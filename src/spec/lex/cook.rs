@@ -1,4 +1,4 @@
-use crate::{Sym, SymbolTable};
+use crate::{Sym, SymbolTable, AddrBase};
 
 use super::raw;
 use super::Span;
@@ -85,7 +85,8 @@ pub enum Keyword {
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Attr {
-    Align,
+    Align(bool),
+    Location { base: AddrBase, bitwise: bool },
     Order,
 }
 
@@ -289,10 +290,21 @@ impl<'a> TokenCooker<'a> {
 
         match id {
             "def" => Keyword(Keyword::Def),
-            "align" => Attr(Attr::Align),
-            "order" => Attr(Attr::Order),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
+
+            "order" => Attr(Attr::Order),
+
+            "align" => Attr(Attr::Align(false)),
+            "addr" => Attr(Attr::Location{base: AddrBase::Absolute, bitwise: false}),
+            "skip" => Attr(Attr::Location{base: AddrBase::Relative, bitwise: false}),
+            "offset" => Attr(Attr::Location{base: AddrBase::Local, bitwise: false}),
+
+            "balign" => Attr(Attr::Align(true)),
+            "baddr" => Attr(Attr::Location{base: AddrBase::Absolute, bitwise: true}),
+            "bskip" => Attr(Attr::Location{base: AddrBase::Relative, bitwise: true}),
+            "boffset" => Attr(Attr::Location{base: AddrBase::Local, bitwise: true}),
+
             id => Ident(self.symtab.insert(id)),
         }
     }
