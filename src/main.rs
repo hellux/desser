@@ -66,6 +66,7 @@ mod view {
 
         fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
             if level > 0 {
+                write!(self.out, "0x{:x} ", st.size / 8)?;
                 self.out.write(b"{\n")?;
             }
             for (id_opt, f) in &st.fields {
@@ -89,10 +90,13 @@ mod view {
 
         fn fmt_array(
             &mut self,
+            size: u64,
             kinds: &[(u64, StructFieldKind)],
             level: usize,
         ) -> io::Result<()> {
             let w = format!("{}", kinds.len()).len();
+
+            write!(self.out, "0x{:x} ", size/8)?;
 
             if !kinds.is_empty() {
                 if let (_, StructFieldKind::Prim(Ptr {
@@ -117,6 +121,8 @@ mod view {
                     self.out.write(&vec![b' '; 4 * (level - 1)])?;
                     self.out.write(b"]")?;
                 }
+            } else {
+                self.out.write(b"[]")?;
             }
 
             Ok(())
@@ -137,8 +143,8 @@ mod view {
                     );
                     ptr.pty.fmt(&mut self.out, data.as_slice())
                 }
-                StructFieldKind::Array(_, kinds) => {
-                    self.fmt_array(&kinds, level + 1)
+                StructFieldKind::Array(size, kinds) => {
+                    self.fmt_array(*size, &kinds, level + 1)
                 }
                 StructFieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
             }
