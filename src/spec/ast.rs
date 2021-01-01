@@ -1,4 +1,4 @@
-use crate::{AddrBase, Order, StructSpecs, Sym, SymTraverse};
+use crate::{AddrBase, Order, StructSpecs, Sym};
 
 use super::Span;
 
@@ -18,6 +18,7 @@ pub enum Stmt {
     Field(Field),
     If(IfStmt),
     Constrain(Vec<Expr>),
+    Debug(Vec<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +77,7 @@ pub enum ArraySize {
 }
 
 pub type PrimType = crate::PrimType<Expr>;
+pub type SymAccess = crate::SymAccess<Expr>;
 
 /* Expressions */
 
@@ -88,7 +90,7 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Int(i64),
-    Ident(SymTraverse),
+    Ident(Vec<SymAccess>),
     Binary(Box<BinOp>),
     Unary(Box<UnOp>),
 }

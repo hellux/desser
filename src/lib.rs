@@ -100,7 +100,11 @@ pub enum ErrorType {
 }
 
 pub type Sym = u16;
-pub type SymTraverse = Vec<Sym>; // member access, e.g. sym_a.sym_b.x
+#[derive(Clone, Debug)]
+pub enum SymAccess<T> {
+    Sym(Sym),
+    Index(T),
+}
 type StructSpecs = HashMap<Sym, spec::ast::Struct>;
 
 #[derive(Clone, Debug)]

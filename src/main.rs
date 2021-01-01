@@ -8,7 +8,7 @@ mod view {
     use std::io::{BufRead, Seek, Write};
 
     use desser::format;
-    use desser::{PrimType, Ptr, Struct, StructFieldKind, SymbolTable};
+    use desser::{PrimType, Ptr, Struct, Array, StructFieldKind, SymbolTable};
 
     pub fn view_file<R: BufRead + Seek>(
         f: &mut R,
@@ -90,27 +90,29 @@ mod view {
 
         fn fmt_array(
             &mut self,
-            size: u64,
-            kinds: &[(u64, StructFieldKind)],
+            arr: &Array,
             level: usize,
         ) -> io::Result<()> {
-            let w = format!("{}", kinds.len()).len();
+            let w = format!("{}", arr.elements.len()).len();
 
-            write!(self.out, "0x{:x} ", size/8)?;
+            write!(self.out, "0x{:x} ", arr.size / 8)?;
 
-            if !kinds.is_empty() {
-                if let (_, StructFieldKind::Prim(Ptr {
-                    pty: PrimType::Char,
-                    ..
-                })) = kinds[0]
+            if !arr.elements.is_empty() {
+                if let (
+                    _,
+                    StructFieldKind::Prim(Ptr {
+                        pty: PrimType::Char,
+                        ..
+                    }),
+                ) = arr.elements[0]
                 {
-                    for (_, kind) in kinds {
+                    for (_, kind) in &arr.elements {
                         self.fmt_field(kind, level)?;
                     }
                 } else {
                     self.out.write(b"[\n")?;
-                    for (i, kind) in kinds {
-                        self.prepend_addr(&kind)?;
+                    for (i, kind) in &arr.elements {
+                        self.prepend_addr(kind)?;
                         self.out.write(&vec![b' '; 4 * level])?;
                         write!(self.out, "{:>w$}: ", i, w = w,)?;
                         self.fmt_field(kind, level)?;
@@ -143,8 +145,8 @@ mod view {
                     );
                     ptr.pty.fmt(&mut self.out, data.as_slice())
                 }
-                StructFieldKind::Array(size, kinds) => {
-                    self.fmt_array(*size, &kinds, level + 1)
+                StructFieldKind::Array(arr) => {
+                    self.fmt_array(arr, level + 1)
                 }
                 StructFieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
             }

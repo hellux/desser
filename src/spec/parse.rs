@@ -272,9 +272,16 @@ impl Parser {
                             ));
                         }
                         Keyword::Constrain => {
-                            self.eat(&mut stream)?; // constraint block
+                            self.eat(&mut stream)?; // block
                             let dn = self.expect_delim()?;
                             stmts.push(ast::Stmt::Constrain(
+                                self.parse_expr_list(dn.stream)?,
+                            ));
+                        }
+                        Keyword::Debug => {
+                            self.eat(&mut stream)?; // block
+                            let dn = self.expect_delim()?;
+                            stmts.push(ast::Stmt::Debug(
                                 self.parse_expr_list(dn.stream)?,
                             ));
                         }
@@ -687,28 +694,21 @@ impl Parser {
         let mut lhs_span = self.tree.span();
         let mut lhs_kind = match self.tree.take() {
             TokTree::Token(token) => match token.kind {
+                TokKind::Dot => {
+                    let mut accs =
+                        vec![ast::SymAccess::Sym(self.symtab.sym_self())];
+                    self.parse_sym_accesses(stream, &mut accs)?;
+                    ast::ExprKind::Ident(accs)
+                }
                 TokKind::Literal(LitKind::Int(val)) => ast::ExprKind::Int(val),
                 TokKind::Ident(id) => {
-                    let mut ids = vec![id];
-                    while stream.not_empty() {
-                        match stream.peek().unwrap() {
-                            TokTree::Token(token)
-                                if token.kind == TokKind::Dot =>
-                            {
-                                self.eat(stream)?; // dot
-                                self.eat(stream)?;
-                                lhs_span.1 = self.tree.span().1;
-                                ids.push(self.expect_ident()?);
-                            }
-                            _ => break,
-                        }
-                    }
-                    ast::ExprKind::Ident(ids)
+                    let mut accs = vec![ast::SymAccess::Sym(id)];
+                    self.parse_sym_accesses(stream, &mut accs)?;
+                    ast::ExprKind::Ident(accs)
                 }
                 TokKind::Minus => {
                     let op = ast::UnOpKind::Neg;
                     let expr = self.parse_expr_fix(stream, op.fixity())?;
-                    lhs_span = Span(lhs_span.0, expr.span.1);
                     ast::ExprKind::Unary(Box::new(ast::UnOp {
                         expr,
                         kind: ast::UnOpKind::Neg,
@@ -731,6 +731,7 @@ impl Parser {
                 ));
             }
         };
+        lhs_span.1 = self.tree.span().1;
 
         while stream.not_empty() {
             match stream.peek().unwrap() {
@@ -792,6 +793,32 @@ impl Parser {
             kind: lhs_kind,
             span: lhs_span,
         })
+    }
+
+    fn parse_sym_accesses(
+        &mut self,
+        stream: &mut TokenStream,
+        accs: &mut Vec<ast::SymAccess>,
+    ) -> PResult<()> {
+        while stream.not_empty() {
+            match stream.peek().unwrap() {
+                TokTree::Token(token) if token.kind == TokKind::Dot => {
+                    self.eat(stream)?; // dot
+                    self.eat(stream)?;
+                    accs.push(ast::SymAccess::Sym(self.expect_ident()?));
+                }
+                TokTree::Delim(dn) if dn.delim == Bracket => {
+                    self.eat(stream)?; // bracket stream
+                    let dn = self.expect_delim()?;
+                    accs.push(ast::SymAccess::Index(
+                        self.parse_expr(dn.stream)?,
+                    ));
+                }
+                _ => break,
+            }
+        }
+
+        Ok(())
     }
 
     fn err(&self, kind: PErrorKind) -> PError {

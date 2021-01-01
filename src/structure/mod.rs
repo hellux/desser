@@ -13,6 +13,7 @@ pub struct Ptr {
 }
 
 type PrimType = crate::PrimType<u8>;
+type SymAccess = crate::SymAccess<u64>;
 
 impl PrimType {
     pub fn size(&self) -> u8 {
@@ -33,13 +34,20 @@ impl PrimType {
 #[derive(Debug)]
 pub enum StructFieldKind {
     Prim(Ptr),
-    Array(u64, Vec<(u64, StructFieldKind)>),
+    Array(Array),
     Struct(Struct),
 }
 
 #[derive(Debug)]
 pub struct StructField {
     pub kind: StructFieldKind,
+}
+
+#[derive(Debug)]
+pub struct Array {
+    pub start: u64,
+    pub size: u64,
+    pub elements: Vec<(u64, StructFieldKind)>,
 }
 
 #[derive(Debug)]
@@ -59,8 +67,10 @@ impl StructFieldKind {
     pub fn is_leaf(&self) -> bool {
         match self {
             StructFieldKind::Prim(_) => true,
-            StructFieldKind::Array(_, kinds) => {
-                if let Some(StructFieldKind::Prim(ptr)) = kinds.get(0).map(|(_, k)| k) {
+            StructFieldKind::Array(Array { elements, .. }) => {
+                if let Some(StructFieldKind::Prim(ptr)) =
+                    elements.get(0).map(|(_, k)| k)
+                {
                     if let PrimType::Char = ptr.pty {
                         true
                     } else {
@@ -77,7 +87,7 @@ impl StructFieldKind {
     pub fn start(&self) -> u64 {
         match self {
             StructFieldKind::Prim(ptr) => ptr.start,
-            StructFieldKind::Array(start, _) => *start,
+            StructFieldKind::Array(arr) => arr.start,
             StructFieldKind::Struct(st) => st.start,
         }
     }

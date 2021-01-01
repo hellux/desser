@@ -83,6 +83,7 @@ pub enum Keyword {
     If,
     Else,
     Constrain,
+    Debug,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -296,6 +297,7 @@ impl<'a> TokenCooker<'a> {
             "def" => Keyword(Keyword::Def),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
+            "debug" => Keyword(Keyword::Debug),
             "constrain" => Keyword(Keyword::Constrain),
 
             "constraint" => Attr(Attr::Constraint),
