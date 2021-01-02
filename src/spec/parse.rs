@@ -67,7 +67,7 @@ pub fn parse_file_spec(
     let file_spec =
         parser.parse_inner_struct(tokens).map(|(structs, block)| {
             ast::Struct {
-                parameters: vec![],
+                formal_params: vec![],
                 structs,
                 block,
             }
@@ -183,7 +183,7 @@ impl Parser {
 
         self.eat(stream)?;
         let mut dn = self.expect_delim()?;
-        let parameters = if dn.delim == Paren {
+        let formal_params = if dn.delim == Paren {
             let ps = self.parse_formal_params(dn.stream)?;
             self.eat(stream)?;
             dn = self.expect_delim()?;
@@ -197,7 +197,7 @@ impl Parser {
             Ok((
                 id,
                 ast::Struct {
-                    parameters,
+                    formal_params,
                     structs,
                     block,
                 },

@@ -6,7 +6,7 @@ use super::Span;
 
 #[derive(Clone, Debug)]
 pub struct Struct {
-    pub parameters: Vec<Sym>,
+    pub formal_params: Vec<Sym>,
     pub structs: StructSpecs,
     pub block: Block,
 }

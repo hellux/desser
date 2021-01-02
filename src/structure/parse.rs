@@ -5,9 +5,9 @@ use super::*;
 use crate::spec::ast;
 use crate::{AddrBase, Error, ErrorType, Span, StructSpecs, Sym, SymbolTable};
 
-pub fn parse_structure<'a, R: BufRead + Seek>(
-    f: &'a mut R,
-    root_spec: &'a ast::Struct,
+pub fn parse_structure<'s, R: BufRead + Seek>(
+    f: &'s mut R,
+    root_spec: &'s ast::Struct,
     symtab: &SymbolTable,
 ) -> Result<StructuredFile, Error> {
     let mut fp = FileParser::new(f, symtab);
@@ -36,10 +36,11 @@ enum SErrorKind {
     IdentifierNotInScope(Sym),
     NonStructMemberAccess,
     NonArrayIndexAccess,
+    FormalActualMismatch,
 
     // errors while reading binary
     SelfNotValid,
-    NotAVariable,
+    NotAValue,
     NotAStructOrArray,
     IndexNotFound(u64),
     InvalidValue(Val),
@@ -111,23 +112,22 @@ impl Error {
 }
 
 #[derive(Clone, Debug)]
-enum Variable {
-    Direct(Val),   // in memory, e.g constant or evaluated parameter
-    Indirect(Ptr), // in file
+enum Name<'n> {
+    Subspace(Namespace<'n>),
+    Field(Ptr),
+    Value(Val),
+    Reference(&'n Name<'n>),
 }
 
-#[derive(Clone, Debug)]
-enum Name {
-    Subspace(Namespace),
-    Field(Variable),
-}
-
-impl Name {
-    fn new(kind: &StructFieldKind, ns: Option<Namespace>) -> Option<Name> {
+impl<'n> Name<'n> {
+    fn new(
+        kind: &StructFieldKind,
+        ns: Option<Namespace<'n>>,
+    ) -> Option<Name<'n>> {
         if let Some(ss) = ns {
             Some(Name::Subspace(ss))
         } else if let StructFieldKind::Prim(ptr) = kind {
-            Some(Name::Field(Variable::Indirect(ptr.clone())))
+            Some(Name::Field(ptr.clone()))
         } else if let None = ns {
             None
         } else {
@@ -135,20 +135,22 @@ impl Name {
         }
     }
 
-    fn get(&self, syms: &[SymAccess]) -> SResult<&Variable> {
-        match self {
-            Name::Subspace(ss) => ss.get(syms),
-            Name::Field(v) => {
-                if syms.len() == 0 {
-                    Ok(&v)
-                } else {
-                    Err(SErrorKind::NotAStructOrArray)
-                }
+    fn get(&self, syms: &[SymAccess]) -> SResult<&Name<'n>> {
+        if syms.is_empty() {
+            Ok(match self {
+                Name::Reference(name) => name,
+                _ => self,
+            })
+        } else {
+            match self {
+                Name::Subspace(ss) => ss.get(syms),
+                Name::Reference(name) => name.get(syms),
+                _ => Err(SErrorKind::NotAStructOrArray),
             }
         }
     }
 
-    fn ss(self) -> Option<Namespace> {
+    fn ss(self) -> Option<Namespace<'n>> {
         match self {
             Name::Subspace(ns) => Some(ns),
             _ => None,
@@ -157,14 +159,14 @@ impl Name {
 }
 
 #[derive(Clone, Debug)]
-enum Namespace {
-    Struct(HashMap<Sym, Name>),
-    Array(HashMap<u64, Name>),
+enum Namespace<'n> {
+    Struct(HashMap<Sym, Name<'n>>),
+    Array(HashMap<u64, Name<'n>>),
 }
 
-impl Namespace {
-    fn get(&self, syms: &[SymAccess]) -> SResult<&Variable> {
-        let head = &syms.get(0).ok_or(SErrorKind::NotAVariable)?;
+impl<'n> Namespace<'n> {
+    fn get(&self, syms: &[SymAccess]) -> SResult<&Name<'n>> {
+        let head = &syms[0];
         let name = match head {
             SymAccess::Sym(sym) => match self {
                 Namespace::Struct(space) => space
@@ -187,7 +189,7 @@ impl Namespace {
         &mut self,
         sym: Sym,
         kind: &StructFieldKind,
-        ns: Option<Namespace>,
+        ns: Option<Namespace<'n>>,
     ) {
         if let Namespace::Struct(space) = self {
             if let Some(name) = Name::new(kind, ns) {
@@ -202,7 +204,7 @@ impl Namespace {
         &mut self,
         idx: u64,
         kind: &StructFieldKind,
-        ns: Option<Namespace>,
+        ns: Option<Namespace<'n>>,
     ) {
         if let Namespace::Array(space) = self {
             if let Some(name) = Name::new(kind, ns) {
@@ -215,21 +217,21 @@ impl Namespace {
 }
 
 #[derive(Clone, Debug)]
-struct Space<'a> {
+struct Space<'s, 'n> {
     base: u64,
-    fields: Namespace,
-    specs: Option<&'a StructSpecs>,
+    fields: Namespace<'n>,
+    specs: Option<&'s StructSpecs>,
 }
 
 #[derive(Clone, Debug)]
-struct Scope<'a>(Vec<Space<'a>>);
+struct Scope<'s, 'n>(Vec<Space<'s, 'n>>);
 
-impl<'a> Scope<'a> {
+impl<'s, 'n> Scope<'s, 'n> {
     fn new() -> Self {
         Scope(Vec::new())
     }
 
-    fn get_spec(&self, sym: Sym) -> Option<&'a ast::Struct> {
+    fn get_spec(&self, sym: Sym) -> Option<&'s ast::Struct> {
         for st in self.0.iter().rev() {
             if let Some(st) = st.specs.and_then(|s| s.get(&sym)) {
                 return Some(st);
@@ -242,22 +244,18 @@ impl<'a> Scope<'a> {
     fn enter_struct(
         &mut self,
         base: u64,
-        st: &'a ast::Struct,
-        actual_params: &[Val],
+        specs: &'s StructSpecs,
+        params: HashMap<Sym, Name<'n>>,
     ) {
-        let mut names = HashMap::new();
-        for (pname, pval) in st.parameters.iter().zip(actual_params.iter()) {
-            names.insert(pname.clone(), Name::Field(Variable::Direct(*pval)));
-        }
-        let ns = Namespace::Struct(names);
+        let ns = Namespace::Struct(params);
         self.0.push(Space {
             base,
             fields: ns,
-            specs: Some(&st.structs),
+            specs: Some(specs),
         });
     }
 
-    fn exit_struct(&mut self) -> Namespace {
+    fn exit_struct(&mut self) -> Namespace<'n> {
         self.0.pop().unwrap().fields
     }
 
@@ -265,23 +263,23 @@ impl<'a> Scope<'a> {
         self.0.last().unwrap().base
     }
 
-    fn ns(&mut self) -> &mut Namespace {
+    fn ns(&mut self) -> &mut Namespace<'n> {
         &mut self.0.last_mut().unwrap().fields
     }
 }
 
-struct FileParser<'a, R> {
-    f: &'a mut R,
+struct FileParser<'s, 'n, R> {
+    f: &'s mut R,
     span: Span,
     pos: u64,
     length: u64,
-    scope: Scope<'a>,
+    scope: Scope<'s, 'n>,
     self_sym: Sym,
-    self_name: Option<Name>,
+    self_name: Option<Name<'n>>,
 }
 
-impl<'a, R: BufRead + Seek> FileParser<'a, R> {
-    fn new(f: &'a mut R, symtab: &SymbolTable) -> Self {
+impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
+    fn new(f: &'s mut R, symtab: &SymbolTable) -> Self {
         let length = f.seek(SeekFrom::End(0)).unwrap() * 8;
         FileParser {
             f,
@@ -390,30 +388,24 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         val
     }
 
-    fn eval_id(&mut self, id: &[ast::SymAccess]) -> SResult<Val> {
-        let mut id_conv = Vec::new();
-        for sa in id {
-            id_conv.push(self.convert_sa(sa)?);
-        }
-
-        let var = match id_conv[0] {
+    fn eval_id(&mut self, asas: &[ast::SymAccess]) -> SResult<Val> {
+        let sas = self.convert_sas(asas)?;
+        let name = match sas[0] {
             SymAccess::Sym(sym) if sym == self.self_sym => {
                 if let Some(name) = &self.self_name {
-                    match name {
-                        Name::Subspace(ns) => ns.get(&id_conv[1..])?,
-                        Name::Field(var) => var,
-                    }
+                    name.get(&sas[1..])?
                 } else {
                     return Err(SErrorKind::SelfNotValid);
                 }
             }
-            _ => self.scope.ns().get(id_conv.as_slice())?,
+            _ => self.scope.ns().get(sas.as_slice())?,
         };
 
-        Ok(match var {
-            Variable::Direct(val) => *val,
-            Variable::Indirect(ptr) => ptr.eval_size(self.f),
-        })
+        match name {
+            Name::Value(val) => Ok(*val),
+            Name::Field(ptr) => Ok(ptr.eval_size(self.f)),
+            _ => Err(SErrorKind::NotAValue),
+        }
     }
 
     fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
@@ -425,7 +417,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         &mut self,
         ty: &ast::FieldType,
         size: &ast::ArraySize,
-    ) -> SResult<(Array, Namespace)> {
+    ) -> SResult<(Array, Namespace<'n>)> {
         let mut elements = Vec::new();
 
         let (min_size, max_size) = match size {
@@ -504,10 +496,32 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
 
     fn parse_struct(
         &mut self,
-        spec: &'a ast::Struct,
-        params: &[Val],
-    ) -> SResult<(Struct, Namespace)> {
-        self.scope.enter_struct(self.pos, &spec, params);
+        spec: &'s ast::Struct,
+        params: &[ast::Expr],
+    ) -> SResult<(Struct, Namespace<'n>)> {
+        let mut names = HashMap::new();
+        if spec.formal_params.len() != params.len() {
+            return Err(SErrorKind::FormalActualMismatch);
+        }
+        for (pname, expr) in spec.formal_params.iter().zip(params.iter()) {
+            let name = match &expr.kind {
+                ast::ExprKind::Ident(syms) => Name::Reference(unsafe {
+                    // XXX this should be okay as names are never removed from
+                    // namespaces and subspaces are always closed before parent
+                    // spaces. might be possible to do this without unsafe
+                    // though
+                    let s = std::mem::transmute::<_, &mut Scope<'n, 'n>>(
+                        &mut self.scope,
+                    );
+                    s.ns()
+                        .get(self.convert_sas(syms.as_slice())?.as_slice())?
+                }),
+                _ => Name::Value(self.eval(expr)?),
+            };
+            names.insert(pname.clone(), name);
+        }
+
+        self.scope.enter_struct(self.pos, &spec.structs, names);
 
         let start = self.pos;
         let fields = self.parse_block(&spec.block)?;
@@ -578,13 +592,22 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
         Ok(fields)
     }
 
-    fn convert_sa(&mut self, asa: &ast::SymAccess) -> SResult<SymAccess> {
-        Ok(match asa {
-            ast::SymAccess::Sym(sym) => SymAccess::Sym(*sym),
-            ast::SymAccess::Index(expr) => {
-                SymAccess::Index(self.eval(expr)? as u64)
-            }
-        })
+    fn convert_sas(
+        &mut self,
+        asas: &[ast::SymAccess],
+    ) -> SResult<Vec<SymAccess>> {
+        let mut sas = Vec::new();
+        for asa in asas {
+            let sa = match asa {
+                ast::SymAccess::Sym(sym) => SymAccess::Sym(*sym),
+                ast::SymAccess::Index(expr) => {
+                    SymAccess::Index(self.eval(expr)? as u64)
+                }
+            };
+            sas.push(sa);
+        }
+
+        Ok(sas)
     }
 
     fn convert_prim(&mut self, apty: &ast::PrimType) -> SResult<PrimType> {
@@ -621,7 +644,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
     fn parse_field_kind(
         &mut self,
         ty: &ast::FieldType,
-    ) -> SResult<Option<(StructFieldKind, Option<Namespace>)>> {
+    ) -> SResult<Option<(StructFieldKind, Option<Namespace<'n>>)>> {
         self.seek_loc(&ty.loc)?;
         self.align(&ty.alignment)?;
 
@@ -640,11 +663,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let (arr, ss) = self.parse_array(ty, count)?;
                 Some((StructFieldKind::Array(arr), Some(ss)))
             }
-            ast::FieldKind::Struct(id, params) => {
-                let mut args = Vec::new();
-                for p in params {
-                    args.push(self.eval(p)?);
-                }
+            ast::FieldKind::Struct(id, args) => {
                 let struct_spec = self
                     .scope
                     .get_spec(*id)
@@ -652,7 +671,7 @@ impl<'a, R: BufRead + Seek> FileParser<'a, R> {
                 let (mut st, ss) = self.parse_struct(struct_spec, &args)?;
                 match st.fields.len() {
                     0 => None,
-                    1 => Some((st.fields.remove(0).1.kind, None)),
+                    1 => Some((st.fields.remove(0).1.kind, Some(ss))),
                     _ => Some((StructFieldKind::Struct(st), Some(ss))),
                 }
             }
