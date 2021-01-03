@@ -5,7 +5,7 @@ use desser::SpecFile;
 
 mod view {
     use std::io;
-    use std::io::{Read, Seek, Write, SeekFrom};
+    use std::io::{Read, Seek, Write};
 
     use desser::format;
     use desser::{PrimType, Ptr, Struct, Array, StructFieldKind, SymbolTable};
@@ -15,13 +15,8 @@ mod view {
         st: &Struct,
         symtab: &SymbolTable,
     ) -> io::Result<String> {
-        let mut buf = Vec::with_capacity(st.size as usize / 8);
-        f.seek(SeekFrom::Start(0))?;
-        f.read_to_end(&mut buf)?;
-        let mut cursor = std::io::Cursor::new(buf);
-
         let mut s = Vec::new();
-        let mut v = Viewer::new(&mut cursor, &mut s, symtab);
+        let mut v = Viewer::new(f, &mut s, symtab);
         v.format(st)?;
         Ok(String::from_utf8_lossy(&s).to_string())
     }
