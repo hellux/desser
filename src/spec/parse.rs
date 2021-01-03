@@ -402,7 +402,17 @@ impl Parser {
     ) -> PResult<ast::Field> {
         let span = stream.span();
         let ty = self.parse_field_type(&mut stream)?;
-        let id = self.parse_field_ident(&mut stream)?;
+        let id = match stream.peek() {
+            Some(TokTree::Token(Token {
+                kind: TokKind::Ident(_),
+                ..
+            })) => {
+                self.eat(&mut stream)?;
+                let id = self.expect_ident()?;
+                Some(id)
+            }
+            _ => None,
+        };
         let hidden = if let Some(sym) = id {
             self.symtab.name(sym).starts_with("_")
         } else {
@@ -553,6 +563,9 @@ impl Parser {
             TokTree::Delim(dn) if dn.delim == Bracket => {
                 ast::FieldKind::Array(self.parse_array_type(dn.stream)?)
             }
+            TokTree::Delim(dn) if dn.delim == Brace => {
+                ast::FieldKind::Block(self.parse_block(dn.stream)?)
+            }
             _ => return Err(self.err_hint(Unexpected, "expected field type")),
         };
 
@@ -693,36 +706,10 @@ impl Parser {
         let mut arr = vec![sa];
         self.parse_sym_accesses(&mut stream, &mut arr)?;
 
-        self.eat(&mut stream)?; // body delim
-        let dn = self.expect_delim()?;
-        let body = if dn.delim == Brace {
-            self.parse_block(dn.stream)?
-        } else {
-            return Err(self.err_hint(
-                UnexpectedOpenDelim(dn.delim),
-                "expected body after for",
-            ));
-        };
+        let ty = Box::new(self.parse_field_type(&mut stream)?);
         self.assert_eof(&stream, "unexpected junk after for loop");
 
-        Ok(ast::ForArray { elem, arr, body })
-    }
-
-    fn parse_field_ident(
-        &mut self,
-        stream: &mut TokenStream,
-    ) -> PResult<Option<Sym>> {
-        match stream.peek() {
-            Some(TokTree::Token(Token {
-                kind: TokKind::Ident(_),
-                ..
-            })) => {
-                self.eat(stream)?;
-                let id = self.expect_ident()?;
-                Ok(Some(id))
-            }
-            _ => Ok(None),
-        }
+        Ok(ast::ForArray { elem, arr, ty })
     }
 
     fn parse_expr(&mut self, mut stream: TokenStream) -> PResult<ast::Expr> {

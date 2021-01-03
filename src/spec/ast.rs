@@ -67,6 +67,7 @@ pub enum FieldKind {
     Prim(PrimType),
     Array(Array),
     Struct(Sym, Vec<Expr>),
+    Block(Block),
 }
 
 #[derive(Clone, Debug)]
@@ -85,7 +86,7 @@ pub struct StdArray {
 pub struct ForArray {
     pub elem: Sym,
     pub arr: Vec<SymAccess>,
-    pub body: Block,
+    pub ty: Box<FieldType>,
 }
 
 #[derive(Clone, Debug)]

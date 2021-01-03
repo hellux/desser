@@ -562,21 +562,13 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
             names.insert(fl.elem, Name::Reference(elem));
 
             self.scope.enter_substruct(self.pos, names);
+            let kind_res = self.parse_field_kind(&fl.ty);
+            self.scope.exit_struct();
 
-            let start = self.pos;
-            let fields = self.parse_block(&fl.body)?;
-            let size = 0;
-
-            let ss = self.scope.exit_struct();
-
-            let kind = StructFieldKind::Struct(Struct {
-                start,
-                size,
-                fields,
-            });
-
-            ns.insert_element(idx, &kind, Some(ss));
-            elements.push((idx, kind));
+            if let Some((kind, ss)) = kind_res? {
+                ns.insert_element(idx, &kind, ss);
+                elements.push((idx, kind));
+            }
         }
         let size = self.pos - start;
 
@@ -767,6 +759,21 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                     ast::Array::For(arr) => self.parse_for_array(arr)?,
                 };
                 Some((StructFieldKind::Array(arr), Some(ss)))
+            }
+            ast::FieldKind::Block(block) => {
+                self.scope.enter_substruct(self.pos, HashMap::new());
+                let start = self.pos;
+                let fields_res = self.parse_block(block);
+                let size = start - self.pos;
+                let ss = self.scope.exit_struct();
+
+                let fields = fields_res?;
+
+                Some((StructFieldKind::Struct(Struct {
+                    start,
+                    size,
+                    fields,
+                }), Some(ss)))
             }
             ast::FieldKind::Struct(id, args) => {
                 let struct_spec = self
