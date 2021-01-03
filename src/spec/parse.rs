@@ -291,11 +291,8 @@ impl Parser {
                                 "structs may only be defined before fields",
                             ));
                         }
-                        Keyword::Else => {
-                            return Err(self.err_hint(
-                                UnexpectedKeyword(kw),
-                                "else may only appear after if",
-                            ));
+                        _ => {
+                            return Err(self.err(UnexpectedKeyword(kw)));
                         }
                     }
                 }
@@ -554,7 +551,7 @@ impl Parser {
                 kind
             }
             TokTree::Delim(dn) if dn.delim == Bracket => {
-                self.parse_array_type(dn.stream)?
+                ast::FieldKind::Array(self.parse_array_type(dn.stream)?)
             }
             _ => return Err(self.err_hint(Unexpected, "expected field type")),
         };
@@ -579,12 +576,26 @@ impl Parser {
             .collect()
     }
 
-    // array ::- [<field_type>; <array_size>]
-    // array_size ::- ? | * | + | <expr> | {<expr,} | {<expr>, <expr>} | <null>
+    // array ::- std_array | for_array
     fn parse_array_type(
         &mut self,
+        stream: TokenStream,
+    ) -> PResult<ast::Array> {
+        Ok(match stream.peek() {
+            Some(TokTree::Token(Token {
+                kind: TokKind::Keyword(Keyword::For),
+                ..
+            })) => ast::Array::For(self.parse_for_array(stream)?),
+            _ => ast::Array::Std(self.parse_std_array(stream)?),
+        })
+    }
+
+    // std_array ::- [<field_type>; <array_size>]
+    // array_size ::- ? | * | + | <expr> | {<expr,} | {<expr>, <expr>} | <null>
+    fn parse_std_array(
+        &mut self,
         mut stream: TokenStream,
-    ) -> PResult<ast::FieldKind> {
+    ) -> PResult<ast::StdArray> {
         let mut type_stream = stream.eat_until(&TokKind::SemiColon);
         let element_type = self.parse_field_type(&mut type_stream)?;
         if stream.not_empty() {
@@ -659,7 +670,42 @@ impl Parser {
             })
         };
 
-        Ok(ast::FieldKind::Array(Box::new(element_type), arr_size))
+        Ok(ast::StdArray {
+            ty: Box::new(element_type),
+            size: arr_size,
+        })
+    }
+
+    // for_array ::- [for <sym> in <sas> <block>]
+    fn parse_for_array(
+        &mut self,
+        mut stream: TokenStream,
+    ) -> PResult<ast::ForArray> {
+        self.eat(&mut stream)?; // for kw
+        self.eat(&mut stream)?; // elem sym
+        let elem = self.expect_ident()?;
+
+        self.eat(&mut stream)?; // in keword
+        self.expect_kind(TokKind::Keyword(Keyword::In))?;
+
+        self.eat(&mut stream)?; // first identifier
+        let sa = ast::SymAccess::Sym(self.expect_ident()?);
+        let mut arr = vec![sa];
+        self.parse_sym_accesses(&mut stream, &mut arr)?;
+
+        self.eat(&mut stream)?; // body delim
+        let dn = self.expect_delim()?;
+        let body = if dn.delim == Brace {
+            self.parse_block(dn.stream)?
+        } else {
+            return Err(self.err_hint(
+                UnexpectedOpenDelim(dn.delim),
+                "expected body after for",
+            ));
+        };
+        self.assert_eof(&stream, "unexpected junk after for loop");
+
+        Ok(ast::ForArray { elem, arr, body })
     }
 
     fn parse_field_ident(
@@ -747,6 +793,8 @@ impl Parser {
                         TokKind::Pipe => ast::BinOpKind::BitOr,
                         TokKind::Eq2 => ast::BinOpKind::Eq,
                         TokKind::Neq => ast::BinOpKind::Neq,
+                        TokKind::Ampersand2 => ast::BinOpKind::And,
+                        TokKind::Pipe2 => ast::BinOpKind::Or,
                         TokKind::Lt => ast::BinOpKind::Lt,
                         TokKind::Gt => ast::BinOpKind::Gt,
                         TokKind::Leq => ast::BinOpKind::Leq,

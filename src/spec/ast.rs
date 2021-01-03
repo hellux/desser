@@ -65,8 +65,27 @@ pub struct FieldType {
 #[derive(Clone, Debug)]
 pub enum FieldKind {
     Prim(PrimType),
-    Array(Box<FieldType>, ArraySize),
+    Array(Array),
     Struct(Sym, Vec<Expr>),
+}
+
+#[derive(Clone, Debug)]
+pub enum Array {
+    Std(StdArray),
+    For(ForArray),
+}
+
+#[derive(Clone, Debug)]
+pub struct StdArray {
+    pub ty: Box<FieldType>,
+    pub size: ArraySize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ForArray {
+    pub elem: Sym,
+    pub arr: Vec<SymAccess>,
+    pub body: Block,
 }
 
 #[derive(Clone, Debug)]
@@ -114,6 +133,8 @@ pub enum BinOpKind {
     BitOr,
     Eq,
     Neq,
+    And,
+    Or,
     Lt,
     Gt,
     Leq,
@@ -137,17 +158,19 @@ pub enum UnOpKind {
 impl BinOpKind {
     pub fn fixity(&self) -> (u8, u8) {
         match self {
-            BinOpKind::Mul | BinOpKind::Div | BinOpKind::Rem => (15, 16),
-            BinOpKind::Add | BinOpKind::Sub => (13, 14),
-            BinOpKind::Shl | BinOpKind::Shr => (11, 12),
+            BinOpKind::Mul | BinOpKind::Div | BinOpKind::Rem => (20, 21),
+            BinOpKind::Add | BinOpKind::Sub => (17, 19),
+            BinOpKind::Shl | BinOpKind::Shr => (15, 16),
             BinOpKind::Lt
             | BinOpKind::Gt
             | BinOpKind::Leq
-            | BinOpKind::Geq => (9, 10),
-            BinOpKind::Eq | BinOpKind::Neq => (7, 8),
-            BinOpKind::BitAnd => (5, 6),
-            BinOpKind::BitXor => (3, 4),
-            BinOpKind::BitOr => (1, 2),
+            | BinOpKind::Geq => (13, 14),
+            BinOpKind::Eq | BinOpKind::Neq => (11, 12),
+            BinOpKind::BitAnd => (9, 10),
+            BinOpKind::BitXor => (7, 8),
+            BinOpKind::BitOr => (5, 6),
+            BinOpKind::And => (3, 4),
+            BinOpKind::Or => (1, 2),
         }
     }
 }
@@ -155,7 +178,7 @@ impl BinOpKind {
 impl UnOpKind {
     pub fn fixity(&self) -> u8 {
         match self {
-            UnOpKind::Neg | UnOpKind::Not => 17,
+            UnOpKind::Neg | UnOpKind::Not => 22,
         }
     }
 }

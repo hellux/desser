@@ -41,6 +41,7 @@ enum SErrorKind {
     // errors while reading binary
     SelfNotValid,
     NotAValue,
+    NotAnIterator,
     NotAStructOrArray,
     IndexNotFound(u64),
     InvalidValue(Val),
@@ -150,6 +151,14 @@ impl<'n> Name<'n> {
         }
     }
 
+    fn array_elements(&self) -> SResult<&HashMap<u64, Name>> {
+        if let Name::Subspace(Namespace::Array(hm)) = self {
+            Ok(hm)
+        } else {
+            Err(SErrorKind::NotAnIterator)
+        }
+    }
+
     fn ss(self) -> Option<Namespace<'n>> {
         match self {
             Name::Subspace(ns) => Some(ns),
@@ -221,6 +230,7 @@ struct Space<'s, 'n> {
     base: u64,
     fields: Namespace<'n>,
     specs: Option<&'s StructSpecs>,
+    sub_struct: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -241,17 +251,45 @@ impl<'s, 'n> Scope<'s, 'n> {
         None
     }
 
+    fn get(&self, syms: &[SymAccess]) -> SResult<&Name<'n>> {
+        for st in self.0.iter().rev() {
+            let fields = &st.fields;
+            match fields.get(syms) {
+                Ok(name) => return Ok(&name),
+                Err(e @ SErrorKind::IdentifierNotInScope(_)) => {
+                    if st.sub_struct {
+                        continue;
+                    } else {
+                        return Err(e);
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        panic!("root struct was a substruct")
+    }
+
     fn enter_struct(
         &mut self,
         base: u64,
-        specs: &'s StructSpecs,
+        specs: Option<&'s StructSpecs>,
         params: HashMap<Sym, Name<'n>>,
     ) {
-        let ns = Namespace::Struct(params);
         self.0.push(Space {
             base,
-            fields: ns,
-            specs: Some(specs),
+            fields: Namespace::Struct(params),
+            specs: specs,
+            sub_struct: false,
+        });
+    }
+
+    fn enter_substruct(&mut self, base: u64, params: HashMap<Sym, Name<'n>>) {
+        self.0.push(Space {
+            base,
+            fields: Namespace::Struct(params),
+            specs: None,
+            sub_struct: true,
         });
     }
 
@@ -360,14 +398,16 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                     ast::BinOpKind::BitAnd => left & right,
                     ast::BinOpKind::BitXor => left ^ right,
                     ast::BinOpKind::BitOr => left | right,
+                    ast::BinOpKind::Shl => left << right,
+                    ast::BinOpKind::Shr => left >> right,
                     ast::BinOpKind::Eq => (left == right) as Val,
                     ast::BinOpKind::Neq => (left != right) as Val,
+                    ast::BinOpKind::And => (left != 0 && right != 0) as Val,
+                    ast::BinOpKind::Or => (left != 0 || right != 0) as Val,
                     ast::BinOpKind::Lt => (left < right) as Val,
                     ast::BinOpKind::Gt => (left > right) as Val,
                     ast::BinOpKind::Leq => (left <= right) as Val,
                     ast::BinOpKind::Geq => (left >= right) as Val,
-                    ast::BinOpKind::Shl => left << right,
-                    ast::BinOpKind::Shr => left >> right,
                 })
             }
             ast::ExprKind::Unary(unop) => {
@@ -398,7 +438,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                     return Err(SErrorKind::SelfNotValid);
                 }
             }
-            _ => self.scope.ns().get(sas.as_slice())?,
+            _ => self.scope.get(sas.as_slice())?,
         };
 
         match name {
@@ -413,14 +453,13 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
         Ok(())
     }
 
-    fn parse_array(
+    fn parse_std_array(
         &mut self,
-        ty: &ast::FieldType,
-        size: &ast::ArraySize,
+        arr: &ast::StdArray,
     ) -> SResult<(Array, Namespace<'n>)> {
         let mut elements = Vec::new();
 
-        let (min_size, max_size) = match size {
+        let (min_size, max_size) = match &arr.size {
             ast::ArraySize::Exactly(n) => {
                 let n = self.eval(n)?;
                 (n, Some(n))
@@ -445,7 +484,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
             let elem_start = self.pos;
 
             // parse until constraint fails or max num is reached
-            let (kind, mut ss_opt) = match self.parse_field_kind(ty) {
+            let (kind, mut ss_opt) = match self.parse_field_kind(&arr.ty) {
                 Ok(Some(field)) => field,
                 Ok(None) => {
                     i += 1;
@@ -463,7 +502,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                 },
             };
 
-            if let Some(constraint) = &ty.constraint {
+            if let Some(constraint) = &arr.ty.constraint {
                 self.self_name = Name::new(&kind, ss_opt);
                 let res = self.eval(constraint)?;
                 ss_opt = self.self_name.take().unwrap().ss();
@@ -494,6 +533,62 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
         ))
     }
 
+    fn parse_for_array(
+        &mut self,
+        fl: &ast::ForArray,
+    ) -> SResult<(Array, Namespace<'n>)> {
+        let mut elements = Vec::new();
+        let mut ns = Namespace::Array(HashMap::new());
+
+        let sas = self.convert_sas(fl.arr.as_slice())?;
+        let mut indices: Vec<_> = self
+            .scope
+            .get(sas.as_slice())?
+            .array_elements()?
+            .keys()
+            .cloned()
+            .collect();
+        indices.sort();
+
+        let start = self.pos;
+        for idx in indices {
+            let s = unsafe {
+                std::mem::transmute::<_, &Scope<'n, 'n>>(&self.scope)
+            };
+            let elem =
+                s.get(sas.as_slice())?.array_elements()?.get(&idx).unwrap();
+
+            let mut names = HashMap::new();
+            names.insert(fl.elem, Name::Reference(elem));
+
+            self.scope.enter_substruct(self.pos, names);
+
+            let start = self.pos;
+            let fields = self.parse_block(&fl.body)?;
+            let size = 0;
+
+            let ss = self.scope.exit_struct();
+
+            let kind = StructFieldKind::Struct(Struct {
+                start,
+                size,
+                fields,
+            });
+
+            ns.insert_element(idx, &kind, Some(ss));
+            elements.push((idx, kind));
+        }
+        let size = self.pos - start;
+
+        let arr = Array {
+            start,
+            size,
+            elements,
+        };
+
+        Ok((arr, ns))
+    }
+
     fn parse_struct(
         &mut self,
         spec: &'s ast::Struct,
@@ -505,38 +600,43 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
         }
         for (pname, expr) in spec.formal_params.iter().zip(params.iter()) {
             let name = match &expr.kind {
-                ast::ExprKind::Ident(syms) => Name::Reference(unsafe {
+                ast::ExprKind::Ident(syms) => Name::Reference({
                     // XXX this should be okay as names are never removed from
                     // namespaces and subspaces are always closed before parent
                     // spaces. might be possible to do this without unsafe
                     // though
-                    let s = std::mem::transmute::<_, &mut Scope<'n, 'n>>(
-                        &mut self.scope,
-                    );
-                    s.ns()
-                        .get(self.convert_sas(syms.as_slice())?.as_slice())?
+                    let s = unsafe {
+                        std::mem::transmute::<_, &mut Scope<'n, 'n>>(
+                            &mut self.scope,
+                        )
+                    };
+                    s.get(self.convert_sas(syms.as_slice())?.as_slice())?
                 }),
                 _ => Name::Value(self.eval(expr)?),
             };
             names.insert(pname.clone(), name);
         }
 
-        self.scope.enter_struct(self.pos, &spec.structs, names);
+        self.scope
+            .enter_struct(self.pos, Some(&spec.structs), names);
 
         let start = self.pos;
-        let fields = self.parse_block(&spec.block)?;
+        let fields_res = self.parse_block(&spec.block);
         let size = self.pos - start;
 
         let ns = self.scope.exit_struct();
 
-        Ok((
-            Struct {
-                start,
-                size,
-                fields,
-            },
-            ns,
-        ))
+        match fields_res {
+            Ok(fields) => Ok((
+                Struct {
+                    start,
+                    size,
+                    fields,
+                },
+                ns,
+            )),
+            Err(e) => Err(e),
+        }
     }
 
     fn parse_block(
@@ -582,10 +682,12 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                     }
                 }
                 ast::Stmt::Debug(exprs) => {
+                    eprint!("debug: ");
                     for expr in exprs {
                         let res = self.eval(expr)?;
-                        eprintln!("debug: {}", res);
+                        eprint!("{:x} ", res);
                     }
+                    eprintln!();
                 }
             }
         }
@@ -659,8 +761,11 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                 self.parse_prim(&ptr)?;
                 Some((StructFieldKind::Prim(ptr), None))
             }
-            ast::FieldKind::Array(ty, count) => {
-                let (arr, ss) = self.parse_array(ty, count)?;
+            ast::FieldKind::Array(arr) => {
+                let (arr, ss) = match arr {
+                    ast::Array::Std(arr) => self.parse_std_array(arr)?,
+                    ast::Array::For(arr) => self.parse_for_array(arr)?,
+                };
                 Some((StructFieldKind::Array(arr), Some(ss)))
             }
             ast::FieldKind::Struct(id, args) => {

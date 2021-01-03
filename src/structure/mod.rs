@@ -31,33 +31,33 @@ impl PrimType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StructFieldKind {
     Prim(Ptr),
     Array(Array),
     Struct(Struct),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructField {
     pub kind: StructFieldKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Array {
     pub start: u64,
     pub size: u64,
     pub elements: Vec<(u64, StructFieldKind)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Struct {
     pub start: u64,
     pub size: u64,
     pub fields: Vec<(Option<Sym>, StructField)>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructuredFile {
     pub size: u64,
     pub root: Struct,

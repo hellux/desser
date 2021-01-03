@@ -82,6 +82,8 @@ pub enum Keyword {
     Def,
     If,
     Else,
+    For,
+    In,
     Constrain,
     Debug,
 }
@@ -297,6 +299,8 @@ impl<'a> TokenCooker<'a> {
             "def" => Keyword(Keyword::Def),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
+            "for" => Keyword(Keyword::For),
+            "in" => Keyword(Keyword::In),
             "debug" => Keyword(Keyword::Debug),
             "constrain" => Keyword(Keyword::Constrain),
 

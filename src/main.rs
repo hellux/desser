@@ -5,30 +5,35 @@ use desser::SpecFile;
 
 mod view {
     use std::io;
-    use std::io::{BufRead, Seek, Write};
+    use std::io::{Read, Seek, Write, SeekFrom};
 
     use desser::format;
     use desser::{PrimType, Ptr, Struct, Array, StructFieldKind, SymbolTable};
 
-    pub fn view_file<R: BufRead + Seek>(
+    pub fn view_file<R: Read + Seek>(
         f: &mut R,
         st: &Struct,
         symtab: &SymbolTable,
     ) -> io::Result<String> {
+        let mut buf = Vec::with_capacity(st.size as usize / 8);
+        f.seek(SeekFrom::Start(0))?;
+        f.read_to_end(&mut buf)?;
+        let mut cursor = std::io::Cursor::new(buf);
+
         let mut s = Vec::new();
-        let mut v = Viewer::new(f, &mut s, symtab);
+        let mut v = Viewer::new(&mut cursor, &mut s, symtab);
         v.format(st)?;
         Ok(String::from_utf8_lossy(&s).to_string())
     }
 
-    struct Viewer<'a, R: BufRead + Seek, W: Write> {
+    struct Viewer<'a, R: Read + Seek, W: Write> {
         f: &'a mut R,
         out: &'a mut W,
         symtab: &'a SymbolTable,
         addr_len: usize,
     }
 
-    impl<'a, R: BufRead + Seek, W: Write> Viewer<'a, R, W> {
+    impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
         fn new(f: &'a mut R, out: &'a mut W, symtab: &'a SymbolTable) -> Self {
             Viewer {
                 f,
@@ -234,11 +239,13 @@ fn main() -> Result<(), std::io::Error> {
     match spec_res {
         Ok((spec, symtab)) => {
             let mut binary_file = BufReader::new(opts.input_file);
+            eprintln!("binary parsing..");
             match desser::parse_structure(&mut binary_file, &spec, &symtab) {
                 Ok(sf) => {
+                    eprintln!("viewing..");
                     println!(
                         "{}",
-                        view::view_file(&mut binary_file, &sf.root, &symtab)?
+                        view::view_file(&mut binary_file.into_inner(), &sf.root, &symtab)?
                     );
                 }
                 Err(e) => {

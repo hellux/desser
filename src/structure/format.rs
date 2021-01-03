@@ -1,18 +1,18 @@
 use std::convert::TryInto;
 use std::io;
-use std::io::{BufRead, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom};
 
 use super::{Order, PrimType, Ptr, Val};
 
 impl Ptr {
-    pub fn eval_size<R: BufRead + Seek>(&self, f: &mut R) -> Val {
+    pub fn eval_size<R: Read + Seek>(&self, f: &mut R) -> Val {
         let bytes =
             read_bytes(self.start, self.pty.size(), self.byte_order, f);
         self.pty.eval_size(bytes.as_slice())
     }
 }
 
-pub fn read_bytes<R: BufRead + Seek>(
+pub fn read_bytes<R: Read + Seek>(
     start: u64,
     size: u8,
     byte_order: Order,
