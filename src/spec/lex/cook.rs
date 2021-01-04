@@ -152,11 +152,8 @@ impl<'a> TokenCooker<'a> {
             let token = raw::first_token(remaining_src);
             self.pos += token.len;
 
-            match self.cook_token(token.kind, start) {
-                Some(kind) => {
-                    return Token::new(kind, Span::new(start, self.pos));
-                }
-                None => {}
+            if let Some(kind) = self.cook_token(token.kind, start) {
+                return Token::new(kind, Span::new(start, self.pos));
             }
         }
     }
@@ -273,16 +270,15 @@ impl<'a> TokenCooker<'a> {
     }
 
     fn get_str_bytes(&mut self, start: usize) -> Vec<u8> {
-        let content =
-            &mut self.src[start + 1..self.pos - 1].chars().into_iter();
+        let content = &mut self.src[start + 1..self.pos - 1].chars();
         let mut bytes = Vec::new();
         loop {
             match &content.next() {
                 Some('\\') => match content.next() {
-                    Some('n') => bytes.push('\n' as u8),
-                    Some('t') => bytes.push('\t' as u8),
-                    Some('r') => bytes.push('\r' as u8),
-                    Some('0') => bytes.push('\0' as u8),
+                    Some('n') => bytes.push(b'\n'),
+                    Some('t') => bytes.push(b'\t'),
+                    Some('r') => bytes.push(b'\r'),
+                    Some('0') => bytes.push(b'\0'),
                     _ => self.err(LErrorKind::InvalidCharLiteral, start),
                 },
                 Some(c) => bytes.push(*c as u8),

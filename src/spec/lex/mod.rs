@@ -47,24 +47,21 @@ type LResult<T> = Result<T, LError>;
 impl From<LError> for Error {
     fn from(l: LError) -> Self {
         let desc = match l.kind {
-            UnclosedBlockComment => format!(
+            UnclosedBlockComment => {
                 "block comment reached end of file without being closed"
-            ),
-            UnclosedCharLiteral => format!("char literal was never closed"),
-            UnclosedStrLiteral => format!("string literal was never closed"),
-            UnexpectedCloseDelim => {
-                format!("this closing delimiter was not expected")
             }
-            UnclosedDelim => {
-                format!("reached end of file without closing a delimiter")
-            }
+            UnclosedCharLiteral => "char literal was never closed",
+            UnclosedStrLiteral => "string literal was never closed",
+            UnexpectedCloseDelim => "this closing delimiter was not expected",
+            UnclosedDelim => "reached end of file without closing a delimiter",
             UnmatchedDelim => {
-                format!("closing delimiter does not match the latest opened")
+                "closing delimiter does not match the latest opened"
             }
-            InvalidIntLiteral => format!("integer literal is invalid"),
-            InvalidCharLiteral => format!("char literal is invalid"),
-            UnknownToken => format!("unrecognized token"),
-        };
+            InvalidIntLiteral => "integer literal is invalid",
+            InvalidCharLiteral => "char literal is invalid",
+            UnknownToken => "unrecognized token",
+        }
+        .to_string();
         let hint = None;
 
         Error {

@@ -11,7 +11,7 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
     symtab: &SymbolTable,
 ) -> Result<StructuredFile, Error> {
     let mut fp = FileParser::new(f, symtab);
-    let (root, _) = match fp.parse_struct(root_spec, &vec![]) {
+    let (root, _) = match fp.parse_struct(root_spec, &[]) {
         Ok(r) => r,
         Err(kind) => {
             let e = SError {
@@ -129,7 +129,7 @@ impl<'n> Name<'n> {
             Some(Name::Subspace(ss))
         } else if let StructFieldKind::Prim(ptr) = kind {
             Some(Name::Field(ptr.clone()))
-        } else if let None = ns {
+        } else if ns.is_none() {
             None
         } else {
             unimplemented!()
@@ -279,7 +279,7 @@ impl<'s, 'n> Scope<'s, 'n> {
         self.0.push(Space {
             base,
             fields: Namespace::Struct(params),
-            specs: specs,
+            specs,
             sub_struct: false,
         });
     }
@@ -548,7 +548,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
             .keys()
             .cloned()
             .collect();
-        indices.sort();
+        indices.sort_unstable();
 
         let start = self.pos;
         for idx in indices {
@@ -606,7 +606,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                 }),
                 _ => Name::Value(self.eval(expr)?),
             };
-            names.insert(pname.clone(), name);
+            names.insert(*pname, name);
         }
 
         self.scope
@@ -633,7 +633,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
 
     fn parse_block(
         &mut self,
-        block: &ast::Block,
+        block: &[ast::Stmt],
     ) -> SResult<Vec<(Option<Sym>, StructField)>> {
         let mut fields = Vec::new();
         for s in block {
@@ -641,7 +641,7 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                 ast::Stmt::Field(f) => {
                     if let Some(field) = self.parse_field(&f)? {
                         if !f.hidden {
-                            fields.push((f.id.clone(), field));
+                            fields.push((f.id, field));
                         }
                     }
                 }

@@ -27,7 +27,7 @@ pub fn read_bytes<R: Read + Seek>(
     let end_byte = end / 8 + if end_offset > 0 { 1 } else { 0 };
     let size_bytes = (end_byte - start_byte) as usize;
     let mut buf = vec![0; size_bytes];
-    f.read(buf.as_mut_slice()).unwrap();
+    f.read_exact(buf.as_mut_slice()).unwrap();
 
     // use little endian internally
     if byte_order == Order::BigEndian {
@@ -55,27 +55,23 @@ fn le_shr(v: &[u8], n: usize) -> Vec<u8> {
     } else if size <= 8 {
         let shifted: u64 = le8_to_uint(v) >> n;
         let shifted_bytes = u64::to_le_bytes(shifted);
-        shifted_bytes.iter().map(|c| *c).take(v.len()).collect()
+        shifted_bytes.iter().copied().take(v.len()).collect()
     } else {
         let shifted: u128 = le16_to_uint(v) >> n;
         let shifted_bytes = u128::to_le_bytes(shifted);
-        shifted_bytes.iter().map(|c| *c).take(v.len()).collect()
+        shifted_bytes.iter().copied().take(v.len()).collect()
     }
 }
 
 fn le16_to_uint(data: &[u8]) -> u128 {
     let mut bytes = [0; 16];
-    for i in 0..data.len() {
-        bytes[i] = data[i];
-    }
+    bytes[..data.len()].clone_from_slice(&data[..]);
     u128::from_le_bytes(bytes)
 }
 
 fn le8_to_uint(data: &[u8]) -> u64 {
     let mut bytes = [0; 8];
-    for i in 0..data.len() {
-        bytes[i] = data[i];
-    }
+    bytes[..data.len()].clone_from_slice(&data[..]);
     u64::from_le_bytes(bytes)
 }
 

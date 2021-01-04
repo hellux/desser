@@ -105,7 +105,7 @@ impl<'a> Cursor<'a> {
 
     /// Peek at first char without consuming it.
     fn peek(&self) -> char {
-        self.chars.clone().nth(0).unwrap_or('\0')
+        self.chars.clone().next().unwrap_or('\0')
     }
 
     /// Move to the next character.

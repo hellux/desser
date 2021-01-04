@@ -33,7 +33,7 @@ type PResult<T> = Result<T, PError>;
 impl From<PError> for Error {
     fn from(p: PError) -> Self {
         let desc = match p.kind {
-            Unexpected => format!("unexpected token or delimiter"),
+            Unexpected => "unexpected token or delimiter".to_string(),
             UnexpectedToken(token) => {
                 format!("unexpected token -- {:?}", token)
             }
@@ -44,7 +44,7 @@ impl From<PError> for Error {
                 format!("unexpected opening delimiter -- {:?}", delim)
             }
             UnexpectedCloseDelimOrEof => {
-                format!("unexpected closing delimiter or end of file")
+                "unexpected closing delimiter or end of file".to_string()
             }
         };
         let hint = p.hint;
@@ -163,13 +163,12 @@ impl Parser {
     }
 
     fn assert_eof(&mut self, stream: &TokenStream, hint: &'static str) {
-        match stream.peek() {
-            Some(tree) => self.errors.push(PError {
+        if let Some(tree) = stream.peek() {
+            self.errors.push(PError {
                 kind: Unexpected,
                 span: tree.span(),
                 hint: Some(hint),
-            }),
-            None => {}
+            });
         }
     }
 
@@ -414,7 +413,7 @@ impl Parser {
             _ => None,
         };
         let hidden = if let Some(sym) = id {
-            self.symtab.name(sym).starts_with("_")
+            self.symtab.name(sym).starts_with('_')
         } else {
             false
         };
@@ -434,27 +433,22 @@ impl Parser {
     ) -> PResult<Vec<(Attr, Vec<TokenStream>)>> {
         let mut attributes = Vec::new();
 
-        loop {
-            match stream.peek() {
-                Some(TokTree::Token(Token {
-                    kind: TokKind::Attr(attr),
-                    ..
-                })) => {
-                    let attr = *attr;
-                    self.eat(stream)?; // attr name
-                    self.eat(stream)?; // arguments
-                    let dn = self.expect_delim()?;
-                    if dn.delim == Paren {
-                        attributes
-                            .push((attr, dn.stream.split_on(&TokKind::Comma)));
-                    } else {
-                        return Err(self.err_hint(
-                            Unexpected,
-                            "expected parenthesis with attribute arguments",
-                        ));
-                    }
-                }
-                _ => break,
+        while let Some(TokTree::Token(Token {
+            kind: TokKind::Attr(attr),
+            ..
+        })) = stream.peek()
+        {
+            let attr = *attr;
+            self.eat(stream)?; // attr name
+            self.eat(stream)?; // arguments
+            let dn = self.expect_delim()?;
+            if dn.delim == Paren {
+                attributes.push((attr, dn.stream.split_on(&TokKind::Comma)));
+            } else {
+                return Err(self.err_hint(
+                    Unexpected,
+                    "expected parenthesis with attribute arguments",
+                ));
             }
         }
 
@@ -545,9 +539,9 @@ impl Parser {
                     } else if parts.len() == 2
                         && (ord == Some(&"le") || ord == Some(&"be"))
                     {
-                        byte_order = match ord.unwrap() {
-                            &"le" => Order::LittleEndian,
-                            &"be" => Order::BigEndian,
+                        byte_order = match *ord.unwrap() {
+                            "le" => Order::LittleEndian,
+                            "be" => Order::BigEndian,
                             _ => unreachable!(),
                         };
                         kind

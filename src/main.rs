@@ -48,7 +48,7 @@ mod view {
             let bit_str = if bit > 0 {
                 format!(":{}", bit)
             } else {
-                format!("  ")
+                "  ".to_string()
             };
 
             if kind.is_leaf() {
@@ -67,22 +67,22 @@ mod view {
         fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
             if level > 0 {
                 write!(self.out, "0x{:x} ", st.size / 8)?;
-                self.out.write(b"{\n")?;
+                self.out.write_all(b"{\n")?;
             }
             for (id_opt, f) in &st.fields {
                 self.prepend_addr(&f.kind)?;
-                self.out.write(&vec![b' '; 4 * level])?;
+                self.out.write_all(&vec![b' '; 4 * level])?;
                 if let Some(id) = id_opt {
                     write!(self.out, "{}: ", self.symtab.name(*id),)?;
                 }
                 self.fmt_field(&f.kind, level)?;
-                self.out.write(b"\n")?;
+                self.out.write_all(b"\n")?;
             }
 
             if level > 0 {
                 write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-                self.out.write(&vec![b' '; 4 * (level - 1)])?;
-                self.out.write(b"}")?;
+                self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
+                self.out.write_all(b"}")?;
             }
 
             Ok(())
@@ -106,21 +106,21 @@ mod view {
                         self.fmt_field(kind, level)?;
                     }
                 } else {
-                    self.out.write(b"[\n")?;
+                    self.out.write_all(b"[\n")?;
                     for (i, kind) in &arr.elements {
                         self.prepend_addr(kind)?;
-                        self.out.write(&vec![b' '; 4 * level])?;
+                        self.out.write_all(&vec![b' '; 4 * level])?;
                         write!(self.out, "{:>w$}: ", i, w = w,)?;
                         self.fmt_field(kind, level)?;
-                        self.out.write(b",\n")?;
+                        self.out.write_all(b",\n")?;
                     }
 
                     write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-                    self.out.write(&vec![b' '; 4 * (level - 1)])?;
-                    self.out.write(b"]")?;
+                    self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
+                    self.out.write_all(b"]")?;
                 }
             } else {
-                self.out.write(b"[]")?;
+                self.out.write_all(b"[]")?;
             }
 
             Ok(())
@@ -172,30 +172,33 @@ fn parse_options() -> Options {
     let mut view = true;
 
     while let Some(arg) = args.next().take() {
-        if arg.starts_with("-") {
-            match arg.chars().nth(1) {
-                Some('f') => {
-                    if spec.is_none() && spec_fname.is_none() {
-                        let sf: String = arg.chars().skip(2).collect();
-                        spec_fname = if sf.is_empty() {
-                            args.next().take()
-                        } else {
-                            Some(sf)
+        if arg.starts_with('-') {
+            if arg.len() > 1 {
+                for flag in arg.chars().skip(1) {
+                    match flag {
+                        'f' => {
+                            if spec.is_none() && spec_fname.is_none() {
+                                let sf: String = arg.chars().skip(2).collect();
+                                spec_fname = if sf.is_empty() {
+                                    args.next().take()
+                                } else {
+                                    Some(sf)
+                                }
+                            } else {
+                                eprintln!("may only specify one spec");
+                                exit_usage(&program);
+                            }
                         }
-                    } else {
-                        eprintln!("may only specify one spec");
-                        exit_usage(&program);
+                        's' => view = false,
+                        f => {
+                            eprintln!("invalid flag -- {}", f);
+                            exit_usage(&program)
+                        }
                     }
                 }
-                Some('s') => view = false,
-                Some(f) => {
-                    eprintln!("invalid flag -- {}", f);
-                    exit_usage(&program)
-                }
-                None => {
-                    eprintln!("no flag");
-                    exit_usage(&program)
-                }
+            } else {
+                eprintln!("no flag");
+                exit_usage(&program)
             }
         } else if spec.is_none() && spec_fname.is_none() {
             spec = Some(arg);
@@ -209,23 +212,20 @@ fn parse_options() -> Options {
 
     let sf = if let Some(spec) = spec {
         SpecFile::new("<cmdline>", spec)
+    } else if let Some(spec_fname) = spec_fname {
+        let mut src = String::new();
+        let path = std::path::Path::new(&spec_fname);
+        let mut src_file = std::fs::File::open(path).unwrap();
+        src_file.read_to_string(&mut src).expect("spec not unicode");
+        SpecFile::new(&path.to_string_lossy(), src)
     } else {
-        if let Some(spec_fname) = spec_fname {
-            let mut src = String::new();
-            let path = std::path::Path::new(&spec_fname);
-            let mut src_file = std::fs::File::open(path).unwrap();
-            src_file.read_to_string(&mut src).expect("spec not unicode");
-            SpecFile::new(&path.to_string_lossy(), src)
-        } else {
-            eprintln!("no spec provided");
-            exit_usage(&program);
-            unreachable!()
-        }
+        eprintln!("no spec provided");
+        exit_usage(&program);
+        unreachable!()
     };
 
     let input = if let Some(fname) = input_fname {
-        let f = File::open(&fname).unwrap();
-        f
+        File::open(&fname).unwrap()
     } else {
         eprintln!("no input file provided");
         exit_usage(&program);

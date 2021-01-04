@@ -71,11 +71,7 @@ impl StructFieldKind {
                 if let Some(StructFieldKind::Prim(ptr)) =
                     elements.get(0).map(|(_, k)| k)
                 {
-                    if let PrimType::Char = ptr.pty {
-                        true
-                    } else {
-                        false
-                    }
+                    matches!(ptr.pty, PrimType::Char)
                 } else {
                     false
                 }

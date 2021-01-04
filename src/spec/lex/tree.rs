@@ -110,9 +110,9 @@ struct TokTreesReader<'a> {
     token: Token,
 }
 
-pub fn parse_token_trees<'a>(
+pub fn parse_token_trees(
     symtab: SymbolTable,
-    src: &'a str,
+    src: &str,
 ) -> (Result<TokenStream, Error>, SymbolTable, Vec<Error>) {
     let mut ttr = TokTreesReader {
         cooker: TokenCooker::new(symtab, src),
