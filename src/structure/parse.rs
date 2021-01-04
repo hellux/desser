@@ -769,11 +769,14 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
 
                 let fields = fields_res?;
 
-                Some((StructFieldKind::Struct(Struct {
-                    start,
-                    size,
-                    fields,
-                }), Some(ss)))
+                Some((
+                    StructFieldKind::Struct(Struct {
+                        start,
+                        size,
+                        fields,
+                    }),
+                    Some(ss),
+                ))
             }
             ast::FieldKind::Struct(id, args) => {
                 let struct_spec = self

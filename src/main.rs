@@ -8,7 +8,7 @@ mod view {
     use std::io::{Read, Seek, Write};
 
     use desser::format;
-    use desser::{PrimType, Ptr, Struct, Array, StructFieldKind, SymbolTable};
+    use desser::{Array, PrimType, Ptr, Struct, StructFieldKind, SymbolTable};
 
     pub fn view_file<R: Read + Seek>(
         f: &mut R,
@@ -34,7 +34,7 @@ mod view {
                 f,
                 out,
                 symtab,
-                addr_len: 5,
+                addr_len: 0,
             }
         }
 
@@ -88,11 +88,7 @@ mod view {
             Ok(())
         }
 
-        fn fmt_array(
-            &mut self,
-            arr: &Array,
-            level: usize,
-        ) -> io::Result<()> {
+        fn fmt_array(&mut self, arr: &Array, level: usize) -> io::Result<()> {
             let w = format!("{}", arr.elements.len()).len();
 
             write!(self.out, "0x{:x} ", arr.size / 8)?;
@@ -145,9 +141,7 @@ mod view {
                     );
                     ptr.pty.fmt(&mut self.out, data.as_slice())
                 }
-                StructFieldKind::Array(arr) => {
-                    self.fmt_array(arr, level + 1)
-                }
+                StructFieldKind::Array(arr) => self.fmt_array(arr, level + 1),
                 StructFieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
             }
         }
@@ -157,10 +151,14 @@ mod view {
 struct Options {
     spec_file: SpecFile,
     input_file: File,
+    view: bool,
 }
 
 fn exit_usage(program: &str) {
-    eprintln!("usage: {} (-f specfile | 'spec') [binary_file]", program);
+    eprintln!(
+        "usage: {} [-s] (-f specfile | 'spec') [binary_file]",
+        program
+    );
     std::process::exit(1);
 }
 
@@ -171,19 +169,33 @@ fn parse_options() -> Options {
     let mut spec = None;
     let mut spec_fname = None;
     let mut input_fname = None;
+    let mut view = true;
 
     while let Some(arg) = args.next().take() {
-        if arg.starts_with("-f") {
-            if spec.is_none() && spec_fname.is_none() {
-                let sf: String = arg.chars().skip(2).collect();
-                spec_fname = if sf.is_empty() {
-                    args.next().take()
-                } else {
-                    Some(sf)
+        if arg.starts_with("-") {
+            match arg.chars().nth(1) {
+                Some('f') => {
+                    if spec.is_none() && spec_fname.is_none() {
+                        let sf: String = arg.chars().skip(2).collect();
+                        spec_fname = if sf.is_empty() {
+                            args.next().take()
+                        } else {
+                            Some(sf)
+                        }
+                    } else {
+                        eprintln!("may only specify one spec");
+                        exit_usage(&program);
+                    }
                 }
-            } else {
-                eprintln!("may only specify one spec");
-                exit_usage(&program);
+                Some('s') => view = false,
+                Some(f) => {
+                    eprintln!("invalid flag -- {}", f);
+                    exit_usage(&program)
+                }
+                None => {
+                    eprintln!("no flag");
+                    exit_usage(&program)
+                }
             }
         } else if spec.is_none() && spec_fname.is_none() {
             spec = Some(arg);
@@ -223,6 +235,7 @@ fn parse_options() -> Options {
     Options {
         spec_file: sf,
         input_file: input,
+        view,
     }
 }
 
@@ -237,11 +250,17 @@ fn main() -> Result<(), std::io::Error> {
             eprintln!("binary parsing..");
             match desser::parse_structure(&mut binary_file, &spec, &symtab) {
                 Ok(sf) => {
-                    eprintln!("viewing..");
-                    println!(
-                        "{}",
-                        view::view_file(&mut binary_file.into_inner(), &sf.root, &symtab)?
-                    );
+                    if opts.view {
+                        eprintln!("viewing..");
+                        println!(
+                            "{}",
+                            view::view_file(
+                                &mut binary_file.into_inner(),
+                                &sf.root,
+                                &symtab
+                            )?
+                        );
+                    }
                 }
                 Err(e) => {
                     errors.push(e);
