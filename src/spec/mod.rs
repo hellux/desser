@@ -5,6 +5,8 @@ mod parse;
 use crate::Error;
 use crate::SymbolTable;
 
+pub use lex::LitKind;
+
 pub fn parse_spec(
     sf: &SpecFile,
 ) -> Result<(ast::Struct, SymbolTable), Vec<Error>> {

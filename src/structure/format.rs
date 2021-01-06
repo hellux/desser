@@ -2,19 +2,20 @@ use std::convert::TryInto;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
-use super::{Order, PrimType, Ptr, Val};
+use super::eval::{FloatVal, IntVal, Val};
+use super::{Order, PrimType, Ptr};
 
 impl Ptr {
-    pub fn eval_size<R: Read + Seek>(&self, f: &mut R) -> Val {
+    pub fn eval<R: Read + Seek>(&self, f: &mut R) -> Val {
         let bytes =
-            read_bytes(self.start, self.pty.size(), self.byte_order, f);
-        self.pty.eval_size(bytes.as_slice())
+            read_bytes(self.start, self.pty.size() as u64, self.byte_order, f);
+        self.pty.eval(bytes.as_slice())
     }
 }
 
 pub fn read_bytes<R: Read + Seek>(
     start: u64,
-    size: u8,
+    size: u64,
     byte_order: Order,
     f: &mut R,
 ) -> Vec<u8> {
@@ -55,18 +56,16 @@ fn le_shr(v: &[u8], n: usize) -> Vec<u8> {
     } else if size <= 8 {
         let shifted: u64 = le8_to_uint(v) >> n;
         let shifted_bytes = u64::to_le_bytes(shifted);
-        shifted_bytes.iter().copied().take(v.len()).collect()
+        shifted_bytes.iter().cloned().take(size).collect()
     } else {
-        let shifted: u128 = le16_to_uint(v) >> n;
-        let shifted_bytes = u128::to_le_bytes(shifted);
-        shifted_bytes.iter().copied().take(v.len()).collect()
+        let shifts = size / 8 + if size % 8 > 0 { 1 } else { 0 };
+        let mut buf = Vec::with_capacity(size);
+        for _ in 0..shifts {
+            let shifted: u64 = le8_to_uint(v) >> n;
+            buf.extend(u64::to_le_bytes(shifted).iter());
+        }
+        buf.into_iter().take(size).collect()
     }
-}
-
-fn le16_to_uint(data: &[u8]) -> u128 {
-    let mut bytes = [0; 16];
-    bytes[..data.len()].clone_from_slice(&data[..]);
-    u128::from_le_bytes(bytes)
 }
 
 fn le8_to_uint(data: &[u8]) -> u64 {
@@ -76,98 +75,71 @@ fn le8_to_uint(data: &[u8]) -> u64 {
 }
 
 impl PrimType {
-    fn eval_size(&self, data: &[u8]) -> Val {
+    fn eval(&self, data: &[u8]) -> Val {
         match self {
-            PrimType::Signed(n) => {
-                let negative = (data[0] >> 7) == 1; // TODO sometimes incorrect
-                let uint = le8_to_uint(data) as i64;
-                if negative {
-                    -(!uint & (i64::MAX >> (64 - n))) as i64 - 1
-                } else {
-                    uint as i64
-                }
-            }
-            PrimType::Unsigned(_) => le8_to_uint(data) as i64,
-            PrimType::BitVec(_) => le8_to_uint(data) as i64,
-            PrimType::Char => {
-                u8::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::U8 => u8::from_le_bytes(data.try_into().unwrap()) as Val,
-            PrimType::S8 => i8::from_le_bytes(data.try_into().unwrap()) as Val,
-            PrimType::U16 => {
-                u16::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::S16 => {
-                i16::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::U32 => {
-                u32::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::S32 => {
-                i32::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::U64 => {
-                u64::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::S64 => {
-                i64::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::U128 => {
-                u128::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            PrimType::S128 => {
-                i128::from_le_bytes(data.try_into().unwrap()) as Val
-            }
-            _ => panic!(),
+            PrimType::BitVec(_) => Val::Integer(le8_to_uint(data) as IntVal),
+            PrimType::Char => Val::Integer(u8::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::U8 => Val::Integer(u8::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::I8 => Val::Integer(i8::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::U16 => Val::Integer(u16::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::I16 => Val::Integer(i16::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::U32 => Val::Integer(u32::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::I32 => Val::Integer(i32::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::U64 => Val::Integer(u64::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::I64 => Val::Integer(i64::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as IntVal),
+            PrimType::F32 => Val::Float(f32::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as FloatVal),
+            PrimType::F64 => Val::Float(f64::from_le_bytes(
+                data.try_into().unwrap(),
+            ) as FloatVal),
         }
     }
-}
 
-impl PrimType {
     pub fn fmt<W: io::Write>(
         &self,
         out: &mut W,
         data: &[u8],
     ) -> io::Result<()> {
         match self {
-            PrimType::Unsigned(_) => write!(out, "{}", le16_to_uint(data)),
-            PrimType::Signed(_) => todo!(),
-            PrimType::Float(e, m) => {
-                let mut uint = le16_to_uint(data);
-                let mantissa = uint & (u128::MAX >> (128 - m));
-                uint >>= m;
-                let exponent = uint & (u128::MAX >> (128 - e));
-                uint >>= e;
-                let sign = uint & 1;
-
-                let exponent = exponent as f64 / (2 >> m) as f64;
-                let val = mantissa as f64
-                    * 2.0_f64.powf(exponent)
-                    * if sign == 1 { -1.0 } else { 1.0 };
-                write!(out, "{}", val)
-            }
             PrimType::BitVec(n) => {
-                write!(out, "{:0n$b}", le16_to_uint(data), n = *n as usize)
+                write!(out, "{:0n$b}", le8_to_uint(data), n = *n as usize)
             }
             PrimType::Char => {
                 write!(out, "{}", data[0] as char)
             }
             PrimType::U8
-            | PrimType::S8
+            | PrimType::I8
             | PrimType::U16
-            | PrimType::S16
+            | PrimType::I16
             | PrimType::U32
-            | PrimType::S32
+            | PrimType::I32
             | PrimType::U64
-            | PrimType::S64
-            | PrimType::U128
-            | PrimType::S128 => write!(out, "{}", self.eval_size(data)),
-            PrimType::F32 => {
-                write!(out, "{}", f32::from_le_bytes(data.try_into().unwrap()))
-            }
-            PrimType::F64 => {
-                write!(out, "{}", f64::from_le_bytes(data.try_into().unwrap()))
-            }
+            | PrimType::I64
+            | PrimType::F32
+            | PrimType::F64 => match self.eval(data) {
+                Val::Integer(i) => write!(out, "{}", i),
+                Val::Float(f) => write!(out, "{}", f),
+                _ => unreachable!(),
+            },
         }
     }
 }

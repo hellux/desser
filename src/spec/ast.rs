@@ -62,6 +62,8 @@ pub struct FieldType {
     pub constraint: Option<Expr>,
 }
 
+pub type PrimType = crate::PrimType<Expr>;
+
 #[derive(Clone, Debug)]
 pub enum FieldKind {
     Prim(PrimType),
@@ -85,7 +87,7 @@ pub struct StdArray {
 #[derive(Clone, Debug)]
 pub struct ForArray {
     pub elem: Sym,
-    pub arr: Vec<SymAccess>,
+    pub arr: Expr,
     pub ty: Box<FieldType>,
 }
 
@@ -95,9 +97,6 @@ pub enum ArraySize {
     Within(Expr, Expr),
     AtLeast(Expr),
 }
-
-pub type PrimType = crate::PrimType<Expr>;
-pub type SymAccess = crate::SymAccess<Expr>;
 
 /* Expressions */
 
@@ -109,21 +108,22 @@ pub struct Expr {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
-    Int(i64),
-    Ident(Vec<SymAccess>),
-    Binary(Box<BinOp>),
-    Unary(Box<UnOp>),
-}
+    // lvalue
+    Variable(Sym),
+    Member(Box<Expr>, Sym),
+    Index(Box<Expr>, Box<Expr>),
 
-#[derive(Clone, Debug)]
-pub struct BinOp {
-    pub kind: BinOpKind,
-    pub lhs: Expr,
-    pub rhs: Expr,
+    // rvalue
+    Literal(super::lex::LitKind),
+    Array(Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
+    AddrOf(Box<Expr>),
+    Binary(BinOp, Box<Expr>, Box<Expr>),
+    Unary(UnOp, Box<Expr>),
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum BinOpKind {
+pub enum BinOp {
     Add,
     Sub,
     Mul,
@@ -144,42 +144,33 @@ pub enum BinOpKind {
     Shr,
 }
 
-#[derive(Clone, Debug)]
-pub struct UnOp {
-    pub expr: Expr,
-    pub kind: UnOpKind,
-}
-
 #[derive(Clone, Copy, Debug)]
-pub enum UnOpKind {
+pub enum UnOp {
     Neg,
     Not,
 }
 
-impl BinOpKind {
+impl BinOp {
     pub fn fixity(&self) -> (u8, u8) {
         match self {
-            BinOpKind::Mul | BinOpKind::Div | BinOpKind::Rem => (20, 21),
-            BinOpKind::Add | BinOpKind::Sub => (17, 19),
-            BinOpKind::Shl | BinOpKind::Shr => (15, 16),
-            BinOpKind::Lt
-            | BinOpKind::Gt
-            | BinOpKind::Leq
-            | BinOpKind::Geq => (13, 14),
-            BinOpKind::Eq | BinOpKind::Neq => (11, 12),
-            BinOpKind::BitAnd => (9, 10),
-            BinOpKind::BitXor => (7, 8),
-            BinOpKind::BitOr => (5, 6),
-            BinOpKind::And => (3, 4),
-            BinOpKind::Or => (1, 2),
+            BinOp::Mul | BinOp::Div | BinOp::Rem => (20, 21),
+            BinOp::Add | BinOp::Sub => (17, 19),
+            BinOp::Shl | BinOp::Shr => (15, 16),
+            BinOp::Lt | BinOp::Gt | BinOp::Leq | BinOp::Geq => (13, 14),
+            BinOp::Eq | BinOp::Neq => (11, 12),
+            BinOp::BitAnd => (9, 10),
+            BinOp::BitXor => (7, 8),
+            BinOp::BitOr => (5, 6),
+            BinOp::And => (3, 4),
+            BinOp::Or => (1, 2),
         }
     }
 }
 
-impl UnOpKind {
+impl UnOp {
     pub fn fixity(&self) -> u8 {
         match self {
-            UnOpKind::Neg | UnOpKind::Not => 22,
+            UnOp::Neg | UnOp::Not => 22,
         }
     }
 }

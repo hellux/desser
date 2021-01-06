@@ -19,23 +19,21 @@ pub enum AddrBase {
     Local,    // 0 at current struct base
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub enum PrimType<T> {
-    Signed(T),
-    Unsigned(T),
-    Float(T, T), // exponent, mantissa
+    //    Int(T),
+    //    Uint(T),
+    //    Float(T, T), // exponent, mantissa
     BitVec(T),
     Char,
     U8,
-    S8,
+    I8,
     U16,
-    S16,
+    I16,
     U32,
-    S32,
+    I32,
     U64,
-    S64,
-    U128,
-    S128,
+    I64,
     F32,
     F64,
 }
@@ -125,8 +123,8 @@ impl SymbolTable {
         tbl
     }
 
-    pub fn name(&self, sym: Sym) -> &str {
-        &self.arr[sym as usize]
+    pub fn name(&self, sym: Sym) -> Option<&str> {
+        self.arr.get(sym as usize).map(|s| s.as_str())
     }
 
     fn insert(&mut self, name: &str) -> Sym {

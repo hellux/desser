@@ -1,17 +1,22 @@
-use std::collections::HashMap;
 use std::io::{BufRead, Seek, SeekFrom};
 
+use super::error::{SError, SErrorKind, SResult};
+use super::eval::{IntVal, Partial, Val};
+use super::scope::{
+    IndexSpace, Name, NameArray, NameStruct, Namespace, Scope,
+};
 use super::*;
-use crate::spec::ast;
-use crate::{AddrBase, Error, ErrorType, Span, StructSpecs, Sym, SymbolTable};
+use crate::{AddrBase, Error, Span, SymbolTable};
 
-pub fn parse_structure<'s, R: BufRead + Seek>(
+pub fn parse<'s, R: BufRead + Seek>(
     f: &'s mut R,
     root_spec: &'s ast::Struct,
-    symtab: &SymbolTable,
-) -> Result<StructuredFile, Error> {
-    let mut fp = FileParser::new(f, symtab);
-    let (root, _) = match fp.parse_struct(root_spec, &[]) {
+    symtab: &mut SymbolTable,
+) -> Result<Name<'s>, Error> {
+    let length = f.seek(SeekFrom::End(0)).unwrap() * 8;
+    let scope = Scope::new(length, symtab);
+    let mut fp = FileParser::new(f, scope, length);
+    let root_name = match fp.parse_struct(root_spec, &[]) {
         Ok(r) => r,
         Err(kind) => {
             let e = SError {
@@ -23,310 +28,25 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
         }
     };
 
-    Ok(StructuredFile {
-        size: fp.length,
-        root,
-    })
+    Ok(root_name)
 }
 
-#[derive(Debug)]
-enum SErrorKind {
-    // errors from spec (could potentially be checked without binary)
-    StructNotInScope(Sym),
-    IdentifierNotInScope(Sym),
-    NonStructMemberAccess,
-    NonArrayIndexAccess,
-    FormalActualMismatch,
-
-    // errors while reading binary
-    SelfNotValid,
-    NotAValue,
-    NotAnIterator,
-    NotAStructOrArray,
-    IndexNotFound(u64),
-    InvalidValue(Val),
-    EndOfFile(u64),
-    AddrBeforeBase(u64),
-    FailedConstraint(i64),
-}
-
-#[derive(Debug)]
-struct SError {
-    span: Span,
-    pos: u64,
-    kind: SErrorKind,
-}
-
-type SResult<T> = Result<T, SErrorKind>;
-
-impl Error {
-    fn from(s: SError, symtab: &SymbolTable) -> Self {
-        let desc = match s.kind {
-            SErrorKind::StructNotInScope(sym) => {
-                format!("struct '{}' not in scope", symtab.name(sym))
-            }
-            SErrorKind::IdentifierNotInScope(sym) => {
-                format!(
-                    "identifier '{}' not in scope",
-                    String::from(symtab.name(sym)),
-                )
-            }
-            SErrorKind::InvalidValue(val) => {
-                format!(
-                    "value '{}' is not valid here at 0x{:x}",
-                    val,
-                    s.pos / 8
-                )
-            }
-            SErrorKind::EndOfFile(size) => {
-                format!(
-                    "end of file reached at {:x} while parsing field at {:x}",
-                    size / 8,
-                    s.pos / 8
-                )
-            }
-            SErrorKind::AddrBeforeBase(base) => {
-                format!(
-                    "jump to {:x} which is before current struct base at {:x}",
-                    s.pos / 8,
-                    base / 8
-                )
-            }
-            SErrorKind::FailedConstraint(res) => {
-                format!(
-                    "unable to match constraint at 0x{:x} -- {}",
-                    s.pos / 8,
-                    res
-                )
-            }
-            k => format!("{:?}", k),
-        };
-        let hint = None;
-
-        Error {
-            span: s.span,
-            desc,
-            hint,
-            ty: ErrorType::Structure,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum Name<'n> {
-    Subspace(Namespace<'n>),
-    Field(Ptr),
-    Value(Val),
-    Reference(&'n Name<'n>),
-}
-
-impl<'n> Name<'n> {
-    fn new(
-        kind: &StructFieldKind,
-        ns: Option<Namespace<'n>>,
-    ) -> Option<Name<'n>> {
-        if let Some(ss) = ns {
-            Some(Name::Subspace(ss))
-        } else if let StructFieldKind::Prim(ptr) = kind {
-            Some(Name::Field(ptr.clone()))
-        } else if ns.is_none() {
-            None
-        } else {
-            unimplemented!()
-        }
-    }
-
-    fn get(&self, syms: &[SymAccess]) -> SResult<&Name<'n>> {
-        if syms.is_empty() {
-            Ok(match self {
-                Name::Reference(name) => name,
-                _ => self,
-            })
-        } else {
-            match self {
-                Name::Subspace(ss) => ss.get(syms),
-                Name::Reference(name) => name.get(syms),
-                _ => Err(SErrorKind::NotAStructOrArray),
-            }
-        }
-    }
-
-    fn array_elements(&self) -> SResult<&HashMap<u64, Name>> {
-        if let Name::Subspace(Namespace::Array(hm)) = self {
-            Ok(hm)
-        } else {
-            Err(SErrorKind::NotAnIterator)
-        }
-    }
-
-    fn ss(self) -> Option<Namespace<'n>> {
-        match self {
-            Name::Subspace(ns) => Some(ns),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum Namespace<'n> {
-    Struct(HashMap<Sym, Name<'n>>),
-    Array(HashMap<u64, Name<'n>>),
-}
-
-impl<'n> Namespace<'n> {
-    fn get(&self, syms: &[SymAccess]) -> SResult<&Name<'n>> {
-        let head = &syms[0];
-        let name = match head {
-            SymAccess::Sym(sym) => match self {
-                Namespace::Struct(space) => space
-                    .get(&sym)
-                    .ok_or(SErrorKind::IdentifierNotInScope(*sym))?,
-                _ => return Err(SErrorKind::NonStructMemberAccess),
-            },
-            SymAccess::Index(idx) => match self {
-                Namespace::Array(space) => {
-                    space.get(&idx).ok_or(SErrorKind::IndexNotFound(*idx))?
-                }
-                _ => return Err(SErrorKind::NonArrayIndexAccess),
-            },
-        };
-
-        name.get(&syms[1..])
-    }
-
-    fn insert_field(
-        &mut self,
-        sym: Sym,
-        kind: &StructFieldKind,
-        ns: Option<Namespace<'n>>,
-    ) {
-        if let Namespace::Struct(space) = self {
-            if let Some(name) = Name::new(kind, ns) {
-                space.insert(sym, name);
-            }
-        } else {
-            panic!();
-        }
-    }
-
-    fn insert_element(
-        &mut self,
-        idx: u64,
-        kind: &StructFieldKind,
-        ns: Option<Namespace<'n>>,
-    ) {
-        if let Namespace::Array(space) = self {
-            if let Some(name) = Name::new(kind, ns) {
-                space.insert(idx, name);
-            }
-        } else {
-            panic!();
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct Space<'s, 'n> {
-    base: u64,
-    fields: Namespace<'n>,
-    specs: Option<&'s StructSpecs>,
-    sub_struct: bool,
-}
-
-#[derive(Clone, Debug)]
-struct Scope<'s, 'n>(Vec<Space<'s, 'n>>);
-
-impl<'s, 'n> Scope<'s, 'n> {
-    fn new() -> Self {
-        Scope(Vec::new())
-    }
-
-    fn get_spec(&self, sym: Sym) -> Option<&'s ast::Struct> {
-        for st in self.0.iter().rev() {
-            if let Some(st) = st.specs.and_then(|s| s.get(&sym)) {
-                return Some(st);
-            }
-        }
-
-        None
-    }
-
-    fn get(&self, syms: &[SymAccess]) -> SResult<&Name<'n>> {
-        for st in self.0.iter().rev() {
-            let fields = &st.fields;
-            match fields.get(syms) {
-                Ok(name) => return Ok(&name),
-                Err(e @ SErrorKind::IdentifierNotInScope(_)) => {
-                    if st.sub_struct {
-                        continue;
-                    } else {
-                        return Err(e);
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        panic!("root struct was a substruct")
-    }
-
-    fn enter_struct(
-        &mut self,
-        base: u64,
-        specs: Option<&'s StructSpecs>,
-        params: HashMap<Sym, Name<'n>>,
-    ) {
-        self.0.push(Space {
-            base,
-            fields: Namespace::Struct(params),
-            specs,
-            sub_struct: false,
-        });
-    }
-
-    fn enter_substruct(&mut self, base: u64, params: HashMap<Sym, Name<'n>>) {
-        self.0.push(Space {
-            base,
-            fields: Namespace::Struct(params),
-            specs: None,
-            sub_struct: true,
-        });
-    }
-
-    fn exit_struct(&mut self) -> Namespace<'n> {
-        self.0.pop().unwrap().fields
-    }
-
-    fn base(&self) -> u64 {
-        self.0.last().unwrap().base
-    }
-
-    fn ns(&mut self) -> &mut Namespace<'n> {
-        &mut self.0.last_mut().unwrap().fields
-    }
-}
-
-struct FileParser<'s, 'n, R> {
+struct FileParser<'s, R> {
     f: &'s mut R,
     span: Span,
     pos: u64,
     length: u64,
-    scope: Scope<'s, 'n>,
-    self_sym: Sym,
-    self_name: Option<Name<'n>>,
+    scope: Scope<'s>,
 }
 
-impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
-    fn new(f: &'s mut R, symtab: &SymbolTable) -> Self {
-        let length = f.seek(SeekFrom::End(0)).unwrap() * 8;
+impl<'s, R: BufRead + Seek> FileParser<'s, R> {
+    fn new(f: &'s mut R, scope: Scope<'s>, length: u64) -> Self {
         FileParser {
             f,
             span: Span(0, 0),
             pos: 0,
             length,
-            scope: Scope::new(),
-            self_sym: symtab.sym_self(),
-            self_name: None,
+            scope,
         }
     }
 
@@ -340,21 +60,18 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
     }
 
     fn seek_loc(&mut self, loc: &ast::Location) -> SResult<()> {
-        let base = self.scope.base();
+        //let base = self.scope.base();
         match &loc.expr {
             Some(expr) => {
                 let base = match loc.base {
                     AddrBase::Absolute => 0,
                     AddrBase::Relative => self.pos,
-                    AddrBase::Local => base,
+                    AddrBase::Local => 0, // FIXME
                 };
 
-                let offset =
-                    self.eval(expr)? as u64 * if loc.bitwise { 1 } else { 8 };
+                let offset = self.eval_size(expr)? as u64
+                    * if loc.bitwise { 1 } else { 8 };
                 self.seek(base + offset)?;
-                if self.pos < base {
-                    return Err(SErrorKind::AddrBeforeBase(base));
-                }
             }
             None => {}
         };
@@ -365,14 +82,14 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
     fn align(&mut self, alignment: &ast::Alignment) -> SResult<()> {
         match &alignment.expr {
             Some(expr) => {
-                let al = self.eval(expr)?;
+                let al = self.eval_size(expr)?;
                 if al > 0 {
                     let al = al as u64 * if alignment.bitwise { 1 } else { 8 };
                     if self.pos % al > 0 {
                         self.pos += al - self.pos % al
                     }
                 } else {
-                    return Err(SErrorKind::InvalidValue(al));
+                    return Err(SErrorKind::InvalidValue(al as u64));
                 }
             }
             None => {}
@@ -382,101 +99,48 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
     }
 
     fn eval(&mut self, expr: &ast::Expr) -> SResult<Val> {
-        self.span = expr.span;
-        let val = match &expr.kind {
-            ast::ExprKind::Int(val) => Ok(*val),
-            ast::ExprKind::Ident(id) => self.eval_id(id),
-            ast::ExprKind::Binary(binop) => {
-                let left = self.eval(&binop.lhs)?;
-                let right = self.eval(&binop.rhs)?;
-                Ok(match binop.kind {
-                    ast::BinOpKind::Add => left + right,
-                    ast::BinOpKind::Sub => left - right,
-                    ast::BinOpKind::Mul => left * right,
-                    ast::BinOpKind::Div => left / right,
-                    ast::BinOpKind::Rem => left % right,
-                    ast::BinOpKind::BitAnd => left & right,
-                    ast::BinOpKind::BitXor => left ^ right,
-                    ast::BinOpKind::BitOr => left | right,
-                    ast::BinOpKind::Shl => left << right,
-                    ast::BinOpKind::Shr => left >> right,
-                    ast::BinOpKind::Eq => (left == right) as Val,
-                    ast::BinOpKind::Neq => (left != right) as Val,
-                    ast::BinOpKind::And => (left != 0 && right != 0) as Val,
-                    ast::BinOpKind::Or => (left != 0 || right != 0) as Val,
-                    ast::BinOpKind::Lt => (left < right) as Val,
-                    ast::BinOpKind::Gt => (left > right) as Val,
-                    ast::BinOpKind::Leq => (left <= right) as Val,
-                    ast::BinOpKind::Geq => (left >= right) as Val,
-                })
-            }
-            ast::ExprKind::Unary(unop) => {
-                let expr = self.eval(&unop.expr)?;
-                Ok(match unop.kind {
-                    ast::UnOpKind::Neg => -expr,
-                    ast::UnOpKind::Not => {
-                        if expr == 0 {
-                            1
-                        } else {
-                            0
-                        }
-                    }
-                })
-            }
-        };
-        self.span = expr.span;
-        val
+        eval::eval(expr, self.f, &self.scope)
     }
 
-    fn eval_id(&mut self, asas: &[ast::SymAccess]) -> SResult<Val> {
-        let sas = self.convert_sas(asas)?;
-        let name = match sas[0] {
-            SymAccess::Sym(sym) if sym == self.self_sym => {
-                if let Some(name) = &self.self_name {
-                    name.get(&sas[1..])?
-                } else {
-                    return Err(SErrorKind::SelfNotValid);
-                }
-            }
-            _ => self.scope.get(sas.as_slice())?,
-        };
-
-        match name {
-            Name::Value(val) => Ok(*val),
-            Name::Field(ptr) => Ok(ptr.eval_size(self.f)),
-            _ => Err(SErrorKind::NotAValue),
+    fn eval_size(&mut self, expr: &ast::Expr) -> SResult<IntVal> {
+        match self.eval(expr)? {
+            Val::Integer(size) if size >= 0 => Ok(size),
+            Val::Integer(neg) => Err(todo!()),
+            _ => Err(todo!()),
         }
     }
 
-    fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
-        self.seek(ptr.start + ptr.pty.size() as u64)?;
-        Ok(())
+    fn eval_bool(&mut self, expr: &ast::Expr) -> SResult<bool> {
+        match self.eval(expr)? {
+            Val::Integer(1) => Ok(true),
+            Val::Integer(0) => Ok(false),
+            _ => Err(todo!()),
+        }
     }
 
-    fn parse_std_array(
-        &mut self,
-        arr: &ast::StdArray,
-    ) -> SResult<(Array, Namespace<'n>)> {
-        let mut elements = Vec::new();
+    fn eval_partial(&mut self, expr: &ast::Expr) -> SResult<Partial<'s>> {
+        let part = eval::eval_partial(expr, self.f, &self.scope)?;
+        Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
+    }
 
+    fn parse_std_array(&mut self, arr: &ast::StdArray) -> SResult<Name<'s>> {
         let (min_size, max_size) = match &arr.size {
             ast::ArraySize::Exactly(n) => {
-                let n = self.eval(n)?;
+                let n = self.eval_size(n)?;
                 (n, Some(n))
             }
             ast::ArraySize::Within(a, b) => {
-                (self.eval(a)?, Some(self.eval(b)?))
+                (self.eval_size(a)?, Some(self.eval_size(b)?))
             }
-            ast::ArraySize::AtLeast(n) => (self.eval(n)?, None),
+            ast::ArraySize::AtLeast(n) => (self.eval_size(n)?, None),
         };
 
         let start = self.pos;
 
-        let mut ns = Namespace::Array(HashMap::new());
-        let mut i = 0;
+        let mut is = IndexSpace::new();
         loop {
             if let Some(m) = max_size {
-                if i >= m as u64 {
+                if is.len() >= m as usize {
                     break;
                 }
             }
@@ -484,16 +148,12 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
             let elem_start = self.pos;
 
             // parse until constraint fails or max num is reached
-            let (kind, mut ss_opt) = match self.parse_field_kind(&arr.ty) {
-                Ok(Some(field)) => field,
-                Ok(None) => {
-                    i += 1;
-                    continue;
-                }
+            let name = match self.parse_field_type(&arr.ty) {
+                Ok(name) => name,
                 Err(k) => match k {
-                    SErrorKind::FailedConstraint(_)
+                    SErrorKind::FailedConstraint
                     | SErrorKind::EndOfFile(_)
-                        if i >= min_size as u64 =>
+                        if is.len() >= min_size as usize =>
                     {
                         self.seek(elem_start)?;
                         break;
@@ -502,157 +162,102 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                 },
             };
 
-            if let Some(constraint) = &arr.ty.constraint {
-                self.self_name = Name::new(&kind, ss_opt);
-                let res = self.eval(constraint)?;
-                ss_opt = self.self_name.take().unwrap().ss();
-                if res == 0 {
-                    if i >= min_size as u64 {
-                        self.seek(elem_start)?;
-                        break;
-                    } else {
-                        return Err(SErrorKind::FailedConstraint(res));
-                    }
-                }
-            }
-
-            ns.insert_element(i, &kind, ss_opt);
-
-            elements.push((i, kind));
-            i += 1
+            is.push(name);
         }
         let size = self.pos - start;
 
-        Ok((
-            Array {
-                start,
-                size,
-                elements,
-            },
-            ns,
-        ))
-    }
-
-    fn parse_for_array(
-        &mut self,
-        fl: &ast::ForArray,
-    ) -> SResult<(Array, Namespace<'n>)> {
-        let mut elements = Vec::new();
-        let mut ns = Namespace::Array(HashMap::new());
-
-        let sas = self.convert_sas(fl.arr.as_slice())?;
-        let mut indices: Vec<_> = self
-            .scope
-            .get(sas.as_slice())?
-            .array_elements()?
-            .keys()
-            .cloned()
-            .collect();
-        indices.sort_unstable();
-
-        let start = self.pos;
-        for idx in indices {
-            let s = unsafe {
-                std::mem::transmute::<_, &Scope<'n, 'n>>(&self.scope)
-            };
-            let elem =
-                s.get(sas.as_slice())?.array_elements()?.get(&idx).unwrap();
-
-            let mut names = HashMap::new();
-            names.insert(fl.elem, Name::Reference(elem));
-
-            self.scope.enter_substruct(self.pos, names);
-            let kind_res = self.parse_field_kind(&fl.ty);
-            self.scope.exit_struct();
-
-            if let Some((kind, ss)) = kind_res? {
-                ns.insert_element(idx, &kind, ss);
-                elements.push((idx, kind));
-            }
-        }
-        let size = self.pos - start;
-
-        let arr = Array {
+        Ok(Name::Array(NameArray {
             start,
             size,
-            elements,
-        };
+            elements: is,
+        }))
+    }
 
-        Ok((arr, ns))
+    fn parse_for_array(&mut self, fl: &ast::ForArray) -> SResult<Name<'s>> {
+        let mut is = IndexSpace::new();
+
+        let len = self.eval_partial(&fl.arr)?.name()?.elements()?.len();
+
+        let start = self.pos;
+        for idx in 0..len {
+            let elem = self.eval_partial(&fl.arr)?.name()?.get_element(idx)?;
+
+            let mut ss = Namespace::new();
+            ss.insert(fl.elem, Name::Reference(elem));
+
+            self.scope.enter_subscope(ss);
+            let name_res = self.parse_field_type(&fl.ty);
+            self.scope.exit_subscope();
+
+            let name = name_res?;
+
+            is.push(name);
+        }
+        let size = self.pos - start;
+
+        Ok(Name::Array(NameArray {
+            start,
+            size,
+            elements: is,
+        }))
+    }
+
+    fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
+        self.seek(ptr.start + ptr.pty.size() as u64)?;
+        Ok(())
     }
 
     fn parse_struct(
         &mut self,
         spec: &'s ast::Struct,
         params: &[ast::Expr],
-    ) -> SResult<(Struct, Namespace<'n>)> {
-        let mut names = HashMap::new();
+    ) -> SResult<Name<'s>> {
         if spec.formal_params.len() != params.len() {
             return Err(SErrorKind::FormalActualMismatch);
         }
-        for (pname, expr) in spec.formal_params.iter().zip(params.iter()) {
-            let name = match &expr.kind {
-                ast::ExprKind::Ident(syms) => Name::Reference({
-                    // XXX this should be okay as names are never removed from
-                    // namespaces and subspaces are always closed before parent
-                    // spaces. might be possible to do this without unsafe
-                    // though
-                    let s = unsafe {
-                        std::mem::transmute::<_, &mut Scope<'n, 'n>>(
-                            &mut self.scope,
-                        )
-                    };
-                    s.get(self.convert_sas(syms.as_slice())?.as_slice())?
-                }),
-                _ => Name::Value(self.eval(expr)?),
+
+        let mut static_space = Namespace::new();
+        for (sym, expr) in spec.formal_params.iter().zip(params.iter()) {
+            let name = match self.eval_partial(expr)? {
+                Partial::Value(val) => Name::Value(val),
+                Partial::Name(name) => Name::Reference(name),
             };
-            names.insert(*pname, name);
+            static_space.insert(*sym, name);
+        }
+        for (sym, spec) in &spec.structs {
+            let name = Name::Spec(spec);
+            static_space.insert(*sym, name);
         }
 
-        self.scope
-            .enter_struct(self.pos, Some(&spec.structs), names);
+        self.scope.enter_struct(self.pos, static_space);
 
         let start = self.pos;
-        let fields_res = self.parse_block(&spec.block);
+        let success = self.parse_block(&spec.block);
         let size = self.pos - start;
 
-        let ns = self.scope.exit_struct();
+        let fields = self.scope.exit_struct();
 
-        match fields_res {
-            Ok(fields) => Ok((
-                Struct {
-                    start,
-                    size,
-                    fields,
-                },
-                ns,
-            )),
-            Err(e) => Err(e),
-        }
+        success?;
+
+        Ok(Name::Struct(NameStruct {
+            start,
+            size,
+            fields,
+        }))
     }
 
-    fn parse_block(
-        &mut self,
-        block: &[ast::Stmt],
-    ) -> SResult<Vec<(Option<Sym>, StructField)>> {
-        let mut fields = Vec::new();
+    fn parse_block(&mut self, block: &[ast::Stmt]) -> SResult<()> {
         for s in block {
             match s {
-                ast::Stmt::Field(f) => {
-                    if let Some(field) = self.parse_field(&f)? {
-                        if !f.hidden {
-                            fields.push((f.id, field));
-                        }
-                    }
-                }
+                ast::Stmt::Field(f) => self.parse_field(&f)?,
                 ast::Stmt::If(if_stmt) => {
-                    let body = if self.eval(&if_stmt.cond)? != 0 {
+                    let body = if self.eval_bool(&if_stmt.cond)? {
                         &if_stmt.if_body
                     } else {
                         let mut i = 0;
                         loop {
                             if let Some((c, b)) = if_stmt.elseifs.get(i) {
-                                if self.eval(c)? != 0 {
+                                if self.eval_bool(c)? {
                                     break b;
                                 } else {
                                     i += 1;
@@ -663,86 +268,60 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                         }
                     };
 
-                    fields.append(&mut self.parse_block(body)?);
+                    self.parse_block(body)?;
                 }
                 ast::Stmt::Constrain(exprs) => {
                     for expr in exprs {
-                        let res = self.eval(expr)?;
-                        if res == 0 {
-                            return Err(SErrorKind::FailedConstraint(res));
+                        if !self.eval_bool(expr)? {
+                            return Err(SErrorKind::FailedConstraint);
                         }
                     }
                 }
                 ast::Stmt::Debug(exprs) => {
                     eprint!("debug: ");
                     for expr in exprs {
-                        let res = self.eval(expr)?;
-                        eprint!("{:x} ", res);
+                        eprint!("{:?} ", self.eval(expr)?);
                     }
                     eprintln!();
                 }
             }
         }
-        Ok(fields)
+
+        Ok(())
     }
 
-    fn convert_sas(
-        &mut self,
-        asas: &[ast::SymAccess],
-    ) -> SResult<Vec<SymAccess>> {
-        let mut sas = Vec::new();
-        for asa in asas {
-            let sa = match asa {
-                ast::SymAccess::Sym(sym) => SymAccess::Sym(*sym),
-                ast::SymAccess::Index(expr) => {
-                    SymAccess::Index(self.eval(expr)? as u64)
-                }
-            };
-            sas.push(sa);
-        }
-
-        Ok(sas)
-    }
-
-    fn convert_prim(&mut self, apty: &ast::PrimType) -> SResult<PrimType> {
-        Ok(match apty {
-            ast::PrimType::Signed(len) => {
-                PrimType::Signed(self.eval(&len)? as u8)
-            }
-            ast::PrimType::Unsigned(len) => {
-                PrimType::Unsigned(self.eval(&len)? as u8)
-            }
-            ast::PrimType::Float(exponent, mantissa) => PrimType::Float(
-                self.eval(&exponent)? as u8,
-                self.eval(&mantissa)? as u8,
-            ),
-            ast::PrimType::BitVec(len) => {
-                PrimType::BitVec(self.eval(&len)? as u8)
-            }
-            ast::PrimType::Char => PrimType::Char,
-            ast::PrimType::U8 => PrimType::U8,
-            ast::PrimType::S8 => PrimType::S8,
-            ast::PrimType::U16 => PrimType::U16,
-            ast::PrimType::S16 => PrimType::S16,
-            ast::PrimType::U32 => PrimType::U32,
-            ast::PrimType::S32 => PrimType::S32,
-            ast::PrimType::U64 => PrimType::U64,
-            ast::PrimType::S64 => PrimType::S64,
-            ast::PrimType::U128 => PrimType::U128,
-            ast::PrimType::S128 => PrimType::S128,
-            ast::PrimType::F32 => PrimType::F32,
-            ast::PrimType::F64 => PrimType::F64,
-        })
-    }
-
-    fn parse_field_kind(
-        &mut self,
-        ty: &ast::FieldType,
-    ) -> SResult<Option<(StructFieldKind, Option<Namespace<'n>>)>> {
+    fn parse_field_type(&mut self, ty: &ast::FieldType) -> SResult<Name<'s>> {
         self.seek_loc(&ty.loc)?;
         self.align(&ty.alignment)?;
 
-        let kind = match &ty.kind {
+        let mut name = match &ty.kind {
+            ast::FieldKind::Array(arr) => match arr {
+                ast::Array::Std(arr) => self.parse_std_array(arr)?,
+                ast::Array::For(arr) => self.parse_for_array(arr)?,
+            },
+            ast::FieldKind::Block(block) => {
+                self.scope.enter_subscope(Namespace::new());
+                let start = self.pos;
+                let success = self.parse_block(block);
+                let size = self.pos - start;
+                let fields = self.scope.exit_subscope();
+
+                success?;
+
+                Name::Struct(NameStruct {
+                    start,
+                    size,
+                    fields,
+                })
+            }
+            ast::FieldKind::Struct(spec_sym, args) => {
+                let name = self.scope.get(*spec_sym)?;
+                if let Name::Spec(spec) = name {
+                    self.parse_struct(spec, &args)?
+                } else {
+                    return Err(todo!());
+                }
+            }
             ast::FieldKind::Prim(apty) => {
                 let spty = self.convert_prim(&apty)?;
                 let ptr = Ptr {
@@ -751,74 +330,63 @@ impl<'s, 'n, R: BufRead + Seek> FileParser<'s, 'n, R> {
                     byte_order: ty.byte_order,
                 };
                 self.parse_prim(&ptr)?;
-                Some((StructFieldKind::Prim(ptr), None))
-            }
-            ast::FieldKind::Array(arr) => {
-                let (arr, ss) = match arr {
-                    ast::Array::Std(arr) => self.parse_std_array(arr)?,
-                    ast::Array::For(arr) => self.parse_for_array(arr)?,
-                };
-                Some((StructFieldKind::Array(arr), Some(ss)))
-            }
-            ast::FieldKind::Block(block) => {
-                self.scope.enter_substruct(self.pos, HashMap::new());
-                let start = self.pos;
-                let fields_res = self.parse_block(block);
-                let size = start - self.pos;
-                let ss = self.scope.exit_struct();
-
-                let fields = fields_res?;
-
-                Some((
-                    StructFieldKind::Struct(Struct {
-                        start,
-                        size,
-                        fields,
-                    }),
-                    Some(ss),
-                ))
-            }
-            ast::FieldKind::Struct(id, args) => {
-                let struct_spec = self
-                    .scope
-                    .get_spec(*id)
-                    .ok_or(SErrorKind::StructNotInScope(*id))?;
-                let (mut st, ss) = self.parse_struct(struct_spec, &args)?;
-                match st.fields.len() {
-                    0 => None,
-                    1 => Some((st.fields.remove(0).1.kind, Some(ss))),
-                    _ => Some((StructFieldKind::Struct(st), Some(ss))),
-                }
+                Name::Field(ptr)
             }
         };
 
-        Ok(kind)
+        if let Some(constraint) = &ty.constraint {
+            self.scope.enter_selfscope(name);
+            let res = self.eval_bool(constraint);
+            name = self.scope.exit_selfscope();
+
+            if !res? {
+                return Err(SErrorKind::FailedConstraint);
+            }
+        }
+
+        Ok(name)
     }
 
-    fn parse_field(
-        &mut self,
-        field: &ast::Field,
-    ) -> SResult<Option<StructField>> {
+    fn parse_field(&mut self, field: &ast::Field) -> SResult<()> {
         self.span = field.span;
 
-        let (kind, mut ss_opt) = match self.parse_field_kind(&field.ty)? {
-            Some(k) => k,
-            None => return Ok(None),
-        };
-
-        if let Some(constraint) = &field.ty.constraint {
-            self.self_name = Name::new(&kind, ss_opt);
-            let res = self.eval(constraint)?;
-            ss_opt = self.self_name.take().unwrap().ss();
-            if res == 0 {
-                return Err(SErrorKind::FailedConstraint(res));
-            }
-        }
+        let name = self.parse_field_type(&field.ty)?;
 
         if let Some(id) = field.id {
-            self.scope.ns().insert_field(id, &kind, ss_opt);
-        }
+            self.scope.insert(id, name);
+        } else {
+            self.scope.insert_unnamed(name);
+        };
 
-        Ok(Some(StructField { kind }))
+        Ok(())
+    }
+
+    fn convert_prim(&mut self, apty: &ast::PrimType) -> SResult<PrimType> {
+        Ok(match apty {
+            //        ast::PrimType::Signed(len) => {
+            //            PrimType::Signed(self.eval(&len)? as u8)
+            //        }
+            //        ast::PrimType::Unsigned(len) => {
+            //            PrimType::Unsigned(self.eval(&len)? as u8)
+            //        }
+            //        ast::PrimType::Float(exponent, mantissa) => PrimType::Float(
+            //            self.eval(&exponent)? as u8,
+            //            self.eval(&mantissa)? as u8,
+            //        ),
+            ast::PrimType::BitVec(len) => {
+                PrimType::BitVec(self.eval_size(&len)? as u8)
+            }
+            ast::PrimType::Char => PrimType::Char,
+            ast::PrimType::U8 => PrimType::U8,
+            ast::PrimType::I8 => PrimType::I8,
+            ast::PrimType::U16 => PrimType::U16,
+            ast::PrimType::I16 => PrimType::I16,
+            ast::PrimType::U32 => PrimType::U32,
+            ast::PrimType::I32 => PrimType::I32,
+            ast::PrimType::U64 => PrimType::U64,
+            ast::PrimType::I64 => PrimType::I64,
+            ast::PrimType::F32 => PrimType::F32,
+            ast::PrimType::F64 => PrimType::F64,
+        })
     }
 }

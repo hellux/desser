@@ -2,151 +2,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 
 use desser::SpecFile;
-
-mod view {
-    use std::io;
-    use std::io::{Read, Seek, Write};
-
-    use desser::format;
-    use desser::{Array, PrimType, Ptr, Struct, StructFieldKind, SymbolTable};
-
-    pub fn view_file<R: Read + Seek>(
-        f: &mut R,
-        st: &Struct,
-        symtab: &SymbolTable,
-    ) -> io::Result<String> {
-        let mut s = Vec::new();
-        let mut v = Viewer::new(f, &mut s, symtab);
-        v.format(st)?;
-        Ok(String::from_utf8_lossy(&s).to_string())
-    }
-
-    struct Viewer<'a, R: Read + Seek, W: Write> {
-        f: &'a mut R,
-        out: &'a mut W,
-        symtab: &'a SymbolTable,
-        addr_len: usize,
-    }
-
-    impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
-        fn new(f: &'a mut R, out: &'a mut W, symtab: &'a SymbolTable) -> Self {
-            Viewer {
-                f,
-                out,
-                symtab,
-                addr_len: 0,
-            }
-        }
-
-        fn format(&mut self, st: &Struct) -> io::Result<()> {
-            self.addr_len = format!("{:x}", st.size).len();
-            self.fmt_struct(st, 0)
-        }
-
-        fn prepend_addr(&mut self, kind: &StructFieldKind) -> io::Result<()> {
-            let bit = kind.start() % 8;
-            let bit_str = if bit > 0 {
-                format!(":{}", bit)
-            } else {
-                "  ".to_string()
-            };
-
-            if kind.is_leaf() {
-                write!(
-                    self.out,
-                    "{:0>l$x}{}    ",
-                    kind.start() / 8,
-                    bit_str,
-                    l = self.addr_len
-                )
-            } else {
-                write!(self.out, "{:l$}", "", l = self.addr_len + 6)
-            }
-        }
-
-        fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
-            if level > 0 {
-                write!(self.out, "0x{:x} ", st.size / 8)?;
-                self.out.write_all(b"{\n")?;
-            }
-            for (id_opt, f) in &st.fields {
-                self.prepend_addr(&f.kind)?;
-                self.out.write_all(&vec![b' '; 4 * level])?;
-                if let Some(id) = id_opt {
-                    write!(self.out, "{}: ", self.symtab.name(*id),)?;
-                }
-                self.fmt_field(&f.kind, level)?;
-                self.out.write_all(b"\n")?;
-            }
-
-            if level > 0 {
-                write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-                self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
-                self.out.write_all(b"}")?;
-            }
-
-            Ok(())
-        }
-
-        fn fmt_array(&mut self, arr: &Array, level: usize) -> io::Result<()> {
-            let w = format!("{}", arr.elements.len()).len();
-
-            write!(self.out, "0x{:x} ", arr.size / 8)?;
-
-            if !arr.elements.is_empty() {
-                if let (
-                    _,
-                    StructFieldKind::Prim(Ptr {
-                        pty: PrimType::Char,
-                        ..
-                    }),
-                ) = arr.elements[0]
-                {
-                    for (_, kind) in &arr.elements {
-                        self.fmt_field(kind, level)?;
-                    }
-                } else {
-                    self.out.write_all(b"[\n")?;
-                    for (i, kind) in &arr.elements {
-                        self.prepend_addr(kind)?;
-                        self.out.write_all(&vec![b' '; 4 * level])?;
-                        write!(self.out, "{:>w$}: ", i, w = w,)?;
-                        self.fmt_field(kind, level)?;
-                        self.out.write_all(b",\n")?;
-                    }
-
-                    write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-                    self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
-                    self.out.write_all(b"]")?;
-                }
-            } else {
-                self.out.write_all(b"[]")?;
-            }
-
-            Ok(())
-        }
-
-        fn fmt_field(
-            &mut self,
-            kind: &StructFieldKind,
-            level: usize,
-        ) -> io::Result<()> {
-            match kind {
-                StructFieldKind::Prim(ptr) => {
-                    let data = format::read_bytes(
-                        ptr.start,
-                        ptr.pty.size(),
-                        ptr.byte_order,
-                        &mut self.f,
-                    );
-                    ptr.pty.fmt(&mut self.out, data.as_slice())
-                }
-                StructFieldKind::Array(arr) => self.fmt_array(arr, level + 1),
-                StructFieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
-            }
-        }
-    }
-}
+use desser::view_structure;
 
 struct Options {
     spec_file: SpecFile,
@@ -245,18 +101,18 @@ fn main() -> Result<(), std::io::Error> {
 
     let mut errors = Vec::new();
     match spec_res {
-        Ok((spec, symtab)) => {
+        Ok((spec, mut symtab)) => {
             let mut binary_file = BufReader::new(opts.input_file);
             eprintln!("binary parsing..");
-            match desser::parse_structure(&mut binary_file, &spec, &symtab) {
-                Ok(sf) => {
+            match desser::parse_structure(&mut binary_file, &spec, &mut symtab) {
+                Ok(root) => {
                     if opts.view {
                         eprintln!("viewing..");
                         println!(
                             "{}",
-                            view::view_file(
+                            view_structure(
                                 &mut binary_file.into_inner(),
-                                &sf.root,
+                                &root,
                                 &symtab
                             )?
                         );

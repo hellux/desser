@@ -413,7 +413,7 @@ impl Parser {
             _ => None,
         };
         let hidden = if let Some(sym) = id {
-            self.symtab.name(sym).starts_with('_')
+            self.symtab.name(sym).unwrap().starts_with('_')
         } else {
             false
         };
@@ -495,7 +495,7 @@ impl Parser {
                     self.eat(&mut arg0)?;
                     let ident = self.expect_ident()?;
                     self.assert_eof(&arg0, "order takes only le or be");
-                    byte_order = match self.symtab.name(ident) {
+                    byte_order = match self.symtab.name(ident).unwrap() {
                         "le" => Order::LittleEndian,
                         "be" => Order::BigEndian,
                         _ => {
@@ -528,7 +528,8 @@ impl Parser {
                     _ => vec![],
                 };
 
-                let parts: Vec<_> = self.symtab.name(id).split('_').collect();
+                let parts: Vec<_> =
+                    self.symtab.name(id).unwrap().split('_').collect();
                 let ident = parts[0];
                 let ord = parts.get(1);
                 let kind = if let Some(kind) =
@@ -630,20 +631,20 @@ impl Parser {
                     match t.kind {
                         TokKind::Question => ast::ArraySize::Within(
                             ast::Expr {
-                                kind: ast::ExprKind::Int(0),
+                                kind: ast::ExprKind::Literal(LitKind::Int(0)),
                                 span,
                             },
                             ast::Expr {
-                                kind: ast::ExprKind::Int(1),
+                                kind: ast::ExprKind::Literal(LitKind::Int(1)),
                                 span,
                             },
                         ),
                         TokKind::Plus => ast::ArraySize::AtLeast(ast::Expr {
-                            kind: ast::ExprKind::Int(1),
+                            kind: ast::ExprKind::Literal(LitKind::Int(1)),
                             span,
                         }),
                         TokKind::Star => ast::ArraySize::AtLeast(ast::Expr {
-                            kind: ast::ExprKind::Int(0),
+                            kind: ast::ExprKind::Literal(LitKind::Int(0)),
                             span,
                         }),
                         _ => unreachable!(),
@@ -672,7 +673,7 @@ impl Parser {
             }
         } else {
             ast::ArraySize::AtLeast(ast::Expr {
-                kind: ast::ExprKind::Int(0),
+                kind: ast::ExprKind::Literal(LitKind::Int(0)),
                 span: self.span,
             })
         };
@@ -695,10 +696,7 @@ impl Parser {
         self.eat(&mut stream)?; // in keword
         self.expect_kind(TokKind::Keyword(Keyword::In))?;
 
-        self.eat(&mut stream)?; // first identifier
-        let sa = ast::SymAccess::Sym(self.expect_ident()?);
-        let mut arr = vec![sa];
-        self.parse_sym_accesses(&mut stream, &mut arr)?;
+        let arr = self.parse_expr_fix(&mut stream, 100)?;
 
         let ty = Box::new(self.parse_field_type(&mut stream)?);
         self.assert_eof(&stream, "unexpected junk after for loop");
@@ -722,30 +720,23 @@ impl Parser {
         let mut lhs_kind = match self.tree.take() {
             TokTree::Token(token) => match token.kind {
                 TokKind::Dot => {
-                    let mut accs =
-                        vec![ast::SymAccess::Sym(self.symtab.sym_self())];
-                    self.parse_sym_accesses(stream, &mut accs)?;
-                    ast::ExprKind::Ident(accs)
+                    ast::ExprKind::Variable(self.symtab.sym_self())
                 }
-                TokKind::Literal(LitKind::Int(val)) => ast::ExprKind::Int(val),
-                TokKind::Ident(id) => {
-                    let mut accs = vec![ast::SymAccess::Sym(id)];
-                    self.parse_sym_accesses(stream, &mut accs)?;
-                    ast::ExprKind::Ident(accs)
-                }
-                TokKind::Minus => {
-                    let op = ast::UnOpKind::Neg;
+                TokKind::Literal(litkind) => ast::ExprKind::Literal(litkind),
+                TokKind::Ident(sym) => ast::ExprKind::Variable(sym),
+                kind => {
+                    let op = match kind {
+                        TokKind::Minus => ast::UnOp::Neg,
+                        TokKind::Exclamation => ast::UnOp::Not,
+                        _ => {
+                            return Err(self.err_hint(
+                                UnexpectedToken(kind),
+                                "expected literal, identifier or unary op",
+                            ));
+                        }
+                    };
                     let expr = self.parse_expr_fix(stream, op.fixity())?;
-                    ast::ExprKind::Unary(Box::new(ast::UnOp {
-                        expr,
-                        kind: ast::UnOpKind::Neg,
-                    }))
-                }
-                _ => {
-                    return Err(self.err_hint(
-                        UnexpectedToken(token.kind),
-                        "expected literal, identifier or unary op on lhs",
-                    ))
+                    ast::ExprKind::Unary(op, Box::new(expr))
                 }
             },
             TokTree::Delim(dn) if dn.delim == Paren => {
@@ -762,92 +753,89 @@ impl Parser {
 
         while stream.not_empty() {
             match stream.peek().unwrap() {
+                TokTree::Token(tok) if matches!(tok.kind, TokKind::Dot | TokKind::Ident(_)) =>
+                {
+                    if matches!(tok.kind, TokKind::Dot) {
+                        self.eat(stream)?; // dot
+                    }
+                    self.eat(stream)?; // ident
+                    let sym = self.expect_ident()?;
+                    let st = ast::Expr {
+                        kind: lhs_kind,
+                        span: lhs_span,
+                    };
+                    lhs_kind = ast::ExprKind::Member(Box::new(st), sym);
+                }
+                TokTree::Delim(dn) if dn.delim == Bracket => {
+                    self.eat(stream)?; // bracket delim
+                    let dn = self.expect_delim()?;
+                    let index = self.parse_expr(dn.stream)?;
+                    let arr = ast::Expr {
+                        kind: lhs_kind,
+                        span: lhs_span,
+                    };
+                    lhs_kind =
+                        ast::ExprKind::Index(Box::new(arr), Box::new(index));
+                }
+                TokTree::Delim(dn) if dn.delim == Paren => {
+                    self.eat(stream)?; // paren delim
+                    let dn = self.expect_delim()?;
+                    let args = self.parse_expr_list(dn.stream)?;
+                    let func = ast::Expr {
+                        kind: lhs_kind,
+                        span: lhs_span,
+                    };
+                    lhs_kind = ast::ExprKind::Call(Box::new(func), args);
+                }
                 TokTree::Token(token) => {
-                    let kind = match token.kind {
-                        TokKind::Plus => ast::BinOpKind::Add,
-                        TokKind::Minus => ast::BinOpKind::Sub,
-                        TokKind::Star => ast::BinOpKind::Mul,
-                        TokKind::Slash => ast::BinOpKind::Div,
-                        TokKind::Percentage => ast::BinOpKind::Rem,
-                        TokKind::Ampersand => ast::BinOpKind::BitAnd,
-                        TokKind::Caret => ast::BinOpKind::BitXor,
-                        TokKind::Pipe => ast::BinOpKind::BitOr,
-                        TokKind::Eq2 => ast::BinOpKind::Eq,
-                        TokKind::Neq => ast::BinOpKind::Neq,
-                        TokKind::Ampersand2 => ast::BinOpKind::And,
-                        TokKind::Pipe2 => ast::BinOpKind::Or,
-                        TokKind::Lt => ast::BinOpKind::Lt,
-                        TokKind::Gt => ast::BinOpKind::Gt,
-                        TokKind::Leq => ast::BinOpKind::Leq,
-                        TokKind::Geq => ast::BinOpKind::Geq,
-                        TokKind::Lt2 => ast::BinOpKind::Shl,
-                        TokKind::Gt2 => ast::BinOpKind::Shr,
-                        _ => {
-                            let kind = token.kind.clone();
-                            self.eat(stream)?; // invalid token
-                            return Err(self.err_hint(
-                                UnexpectedToken(kind),
-                                "expected binary operator",
-                            ));
-                        }
+                    let op = match token.kind {
+                        TokKind::Plus => ast::BinOp::Add,
+                        TokKind::Minus => ast::BinOp::Sub,
+                        TokKind::Star => ast::BinOp::Mul,
+                        TokKind::Slash => ast::BinOp::Div,
+                        TokKind::Percentage => ast::BinOp::Rem,
+                        TokKind::Ampersand => ast::BinOp::BitAnd,
+                        TokKind::Caret => ast::BinOp::BitXor,
+                        TokKind::Pipe => ast::BinOp::BitOr,
+                        TokKind::Eq2 => ast::BinOp::Eq,
+                        TokKind::Neq => ast::BinOp::Neq,
+                        TokKind::Ampersand2 => ast::BinOp::And,
+                        TokKind::Pipe2 => ast::BinOp::Or,
+                        TokKind::Lt => ast::BinOp::Lt,
+                        TokKind::Gt => ast::BinOp::Gt,
+                        TokKind::Leq => ast::BinOp::Leq,
+                        TokKind::Geq => ast::BinOp::Geq,
+                        TokKind::Lt2 => ast::BinOp::Shl,
+                        TokKind::Gt2 => ast::BinOp::Shr,
+                        _ => break,
                     };
 
-                    let (lfix, rfix) = kind.fixity();
+                    let (lfix, rfix) = op.fixity();
                     if lfix < min_fixity {
                         break;
                     }
 
                     self.eat(stream)?; // bin op
+                    let rhs = self.parse_expr_fix(stream, rfix)?;
                     let lhs = ast::Expr {
                         kind: lhs_kind,
                         span: lhs_span,
                     };
-                    let rhs = self.parse_expr_fix(stream, rfix)?;
-                    lhs_span.1 = rhs.span.1;
-                    lhs_kind = ast::ExprKind::Binary(Box::new(ast::BinOp {
-                        lhs,
-                        rhs,
-                        kind,
-                    }));
-                }
-                _ => {
-                    return Err(
-                        self.err_hint(Unexpected, "expected binary operator")
+                    lhs_kind = ast::ExprKind::Binary(
+                        op,
+                        Box::new(lhs),
+                        Box::new(rhs),
                     );
                 }
+                _ => break,
             }
+            lhs_span.1 = self.span.1;
         }
 
         Ok(ast::Expr {
             kind: lhs_kind,
             span: lhs_span,
         })
-    }
-
-    fn parse_sym_accesses(
-        &mut self,
-        stream: &mut TokenStream,
-        accs: &mut Vec<ast::SymAccess>,
-    ) -> PResult<()> {
-        while stream.not_empty() {
-            match stream.peek().unwrap() {
-                TokTree::Token(token) if token.kind == TokKind::Dot => {
-                    self.eat(stream)?; // dot
-                    self.eat(stream)?;
-                    accs.push(ast::SymAccess::Sym(self.expect_ident()?));
-                }
-                TokTree::Delim(dn) if dn.delim == Bracket => {
-                    self.eat(stream)?; // bracket stream
-                    let dn = self.expect_delim()?;
-                    accs.push(ast::SymAccess::Index(
-                        self.parse_expr(dn.stream)?,
-                    ));
-                }
-                _ => break,
-            }
-        }
-
-        Ok(())
     }
 
     fn err(&self, kind: PErrorKind) -> PError {
@@ -878,17 +866,16 @@ fn alias_field_kind(
     let kind = match (alias, params) {
         ("char", []) => ast::FieldKind::Prim(ast::PrimType::Char),
         ("u8", []) => ast::FieldKind::Prim(ast::PrimType::U8),
-        ("s8", []) => ast::FieldKind::Prim(ast::PrimType::S8),
+        ("i8", []) => ast::FieldKind::Prim(ast::PrimType::I8),
         ("u16", []) => ast::FieldKind::Prim(ast::PrimType::U16),
-        ("s16", []) => ast::FieldKind::Prim(ast::PrimType::S16),
+        ("i16", []) => ast::FieldKind::Prim(ast::PrimType::I16),
         ("u32", []) => ast::FieldKind::Prim(ast::PrimType::U32),
-        ("s32", []) => ast::FieldKind::Prim(ast::PrimType::S32),
+        ("i32", []) => ast::FieldKind::Prim(ast::PrimType::I32),
         ("u64", []) => ast::FieldKind::Prim(ast::PrimType::U64),
-        ("s64", []) => ast::FieldKind::Prim(ast::PrimType::S64),
-        ("u128", []) => ast::FieldKind::Prim(ast::PrimType::U128),
-        ("s128", []) => ast::FieldKind::Prim(ast::PrimType::S128),
+        ("i64", []) => ast::FieldKind::Prim(ast::PrimType::I64),
         ("f32", []) => ast::FieldKind::Prim(ast::PrimType::F32),
         ("f64", []) => ast::FieldKind::Prim(ast::PrimType::F64),
+        /*
         ("signed", [len]) => {
             ast::FieldKind::Prim(ast::PrimType::Signed(len.clone()))
         }
@@ -898,6 +885,7 @@ fn alias_field_kind(
         ("float", [ex, mt]) => {
             ast::FieldKind::Prim(ast::PrimType::Float(ex.clone(), mt.clone()))
         }
+        */
         ("bitvec", [len]) => {
             ast::FieldKind::Prim(ast::PrimType::BitVec(len.clone()))
         }
