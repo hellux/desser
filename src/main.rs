@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{BufReader, Read};
 
-use desser::SpecFile;
 use desser::view_structure;
+use desser::SpecFile;
 
 struct Options {
     spec_file: SpecFile,
@@ -104,7 +104,8 @@ fn main() -> Result<(), std::io::Error> {
         Ok((spec, mut symtab)) => {
             let mut binary_file = BufReader::new(opts.input_file);
             eprintln!("binary parsing..");
-            match desser::parse_structure(&mut binary_file, &spec, &mut symtab) {
+            match desser::parse_structure(&mut binary_file, &spec, &mut symtab)
+            {
                 Ok(root) => {
                     if opts.view {
                         eprintln!("viewing..");

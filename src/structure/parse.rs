@@ -105,7 +105,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn eval_size(&mut self, expr: &ast::Expr) -> SResult<IntVal> {
         match self.eval(expr)? {
             Val::Integer(size) if size >= 0 => Ok(size),
-            Val::Integer(neg) => Err(todo!()),
+            Val::Integer(_neg) => Err(todo!()),
             _ => Err(todo!()),
         }
     }
@@ -135,8 +135,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             ast::ArraySize::AtLeast(n) => (self.eval_size(n)?, None),
         };
 
-        let start = self.pos;
-
+        let mut start = None;
         let mut is = IndexSpace::new();
         loop {
             if let Some(m) = max_size {
@@ -162,8 +161,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 },
             };
 
+            if start.is_none() {
+                start = name.start();
+            }
+
             is.push(name);
         }
+        let start = start.unwrap_or(self.pos);
         let size = self.pos - start;
 
         Ok(Name::Array(NameArray {
@@ -178,7 +182,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         let len = self.eval_partial(&fl.arr)?.name()?.elements()?.len();
 
-        let start = self.pos;
+        let mut start = None;
         for idx in 0..len {
             let elem = self.eval_partial(&fl.arr)?.name()?.get_element(idx)?;
 
@@ -191,8 +195,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
             let name = name_res?;
 
+            if start.is_none() {
+                start = name.start();
+            }
+
             is.push(name);
         }
+        let start = start.unwrap_or(self.pos);
         let size = self.pos - start;
 
         Ok(Name::Array(NameArray {
@@ -231,19 +240,12 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         self.scope.enter_struct(self.pos, static_space);
 
-        let start = self.pos;
         let success = self.parse_block(&spec.block);
-        let size = self.pos - start;
-
-        let fields = self.scope.exit_struct();
+        let nst = self.scope.exit_struct();
 
         success?;
 
-        Ok(Name::Struct(NameStruct {
-            start,
-            size,
-            fields,
-        }))
+        Ok(Name::Struct(nst))
     }
 
     fn parse_block(&mut self, block: &[ast::Stmt]) -> SResult<()> {
@@ -300,19 +302,11 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 ast::Array::For(arr) => self.parse_for_array(arr)?,
             },
             ast::FieldKind::Block(block) => {
-                self.scope.enter_subscope(Namespace::new());
-                let start = self.pos;
+                self.scope.enter_subblock(self.pos);
                 let success = self.parse_block(block);
-                let size = self.pos - start;
-                let fields = self.scope.exit_subscope();
-
+                let nst = self.scope.exit_subblock();
                 success?;
-
-                Name::Struct(NameStruct {
-                    start,
-                    size,
-                    fields,
-                })
+                Name::Struct(nst)
             }
             ast::FieldKind::Struct(spec_sym, args) => {
                 let name = self.scope.get(*spec_sym)?;
@@ -351,12 +345,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         self.span = field.span;
 
         let name = self.parse_field_type(&field.ty)?;
-
-        if let Some(id) = field.id {
-            self.scope.insert(id, name);
-        } else {
-            self.scope.insert_unnamed(name);
-        };
+        self.scope.insert_field(field.id, name);
 
         Ok(())
     }

@@ -94,7 +94,7 @@ impl<'n> Name<'n> {
 struct StructSpace<'n> {
     static_scope: Namespace<'n>, // accessible to all inner structs
     local_scopes: Vec<Namespace<'n>>, // last is most inner
-    self_name: NameStruct<'n>,
+    blocks: Vec<NameStruct<'n>>,
 }
 
 #[derive(Clone, Debug)]
@@ -117,11 +117,11 @@ impl<'n> Scope<'n> {
         let builtins = StructSpace {
             static_scope: ns,
             local_scopes: vec![Namespace::new()],
-            self_name: NameStruct {
+            blocks: vec![NameStruct {
                 start: 0,
                 size: file_length,
                 fields: Namespace::new(),
-            },
+            }],
         };
         Scope {
             structs: vec![builtins],
@@ -131,7 +131,7 @@ impl<'n> Scope<'n> {
     }
 
     pub fn get(&self, sym: Sym) -> SResult<&Name<'n>> {
-        let mut name = self.get_shallow(sym)?;
+        let mut name = self.get_direct(sym)?;
         while let Name::Reference(inner_name) = name {
             name = inner_name;
         }
@@ -139,7 +139,7 @@ impl<'n> Scope<'n> {
         Ok(name)
     }
 
-    fn get_shallow(&self, sym: Sym) -> SResult<&Name<'n>> {
+    fn get_direct(&self, sym: Sym) -> SResult<&Name<'n>> {
         let current_struct = self.structs.last().unwrap();
 
         /* check all local scopes within struct for variables */
@@ -153,6 +153,17 @@ impl<'n> Scope<'n> {
             return Ok(&name);
         }
 
+        /* check all local blocks for previous fields */
+        if let Some(name) = current_struct
+            .blocks
+            .iter()
+            .rev()
+            .flat_map(|b| b.fields.get(&sym))
+            .next()
+        {
+            return Ok(&name)
+        }
+
         /* check all above structs for struct specs and parameters */
         for st in self.structs.iter().rev() {
             if let Some(name) = st.static_scope.get(&sym) {
@@ -163,35 +174,59 @@ impl<'n> Scope<'n> {
         Err(SErrorKind::IdentifierNotInScope(sym))
     }
 
-    pub fn insert_unnamed(&mut self, name: Name<'n>) {
-        self.insert(self.unnamed, name);
-        self.unnamed -= 1;
-    }
+    pub fn insert_field(&mut self, sym_opt: Option<Sym>, name: Name<'n>) {
+        let sym = if let Some(sym) = sym_opt {
+            sym
+        } else {
+            self.unnamed -= 1;
+            self.unnamed
+        };
 
-    pub fn insert(&mut self, sym: Sym, name: Name<'n>) {
-        self.structs
-            .last_mut()
-            .unwrap()
-            .local_scopes
-            .last_mut()
-            .unwrap()
-            .insert(sym, name);
+        let curr = &mut self.structs.last_mut().unwrap().blocks.last_mut().unwrap();
+
+        let start = name.start().unwrap();
+        let size = name.size().unwrap();
+
+        if curr.fields.is_empty() {
+            curr.start = start;
+            curr.size = size;
+        } else {
+            let end = start + size;
+            let curr_end = curr.start + curr.size;
+            curr.start = u64::min(start, curr.start);
+            let next_end = u64::max(end, curr_end);
+            curr.size = next_end - curr.start;
+        }
+
+        curr.fields.insert(sym, name);
     }
 
     pub fn enter_struct(&mut self, base: u64, static_scope: Namespace<'n>) {
         self.structs.push(StructSpace {
             static_scope,
             local_scopes: vec![Namespace::new()],
-            self_name: NameStruct {
+            blocks: vec![NameStruct {
                 start: base,
                 size: 0,
                 fields: Namespace::new(),
-            },
+            }],
         });
     }
 
-    pub fn exit_struct(&mut self) -> Namespace<'n> {
-        self.structs.pop().unwrap().local_scopes.pop().unwrap()
+    pub fn exit_struct(&mut self) -> NameStruct<'n> {
+        self.structs.pop().unwrap().blocks.pop().unwrap()
+    }
+
+    pub fn enter_subblock(&mut self, base: u64) {
+        self.structs.last_mut().unwrap().blocks.push(NameStruct {
+            start: base,
+            size: 0,
+            fields: Namespace::new(),
+        });
+    }
+
+    pub fn exit_subblock(&mut self) -> NameStruct<'n> {
+        self.structs.last_mut().unwrap().blocks.pop().unwrap()
     }
 
     pub fn enter_subscope(&mut self, ns: Namespace<'n>) {

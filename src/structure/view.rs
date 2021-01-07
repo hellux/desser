@@ -57,13 +57,13 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
     }
 
     fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
-        if level > 0 {
+        if level > 1 {
             write!(self.out, "0x{:x} ", st.size / 8)?;
             self.out.write_all(b"{\n")?;
         }
         for (id, f) in &st.fields {
             self.prepend_addr(&f)?;
-            self.out.write_all(&vec![b' '; 4 * level])?;
+            self.out.write_all(&vec![b' '; 4 * (level-1)])?;
             if let Some(name) = self.symtab.name(*id) {
                 write!(self.out, "{}: ", name)?;
             }
@@ -71,9 +71,9 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             self.out.write_all(b"\n")?;
         }
 
-        if level > 0 {
+        if level > 1 {
             write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-            self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
+            self.out.write_all(&vec![b' '; 4 * (level - 2)])?;
             self.out.write_all(b"}")?;
         }
 
@@ -98,14 +98,14 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                 self.out.write_all(b"[\n")?;
                 for (i, f) in arr.elements.iter().enumerate() {
                     self.prepend_addr(f)?;
-                    self.out.write_all(&vec![b' '; 4 * level])?;
+                    self.out.write_all(&vec![b' '; 4 * (level-1)])?;
                     write!(self.out, "{:>w$}: ", i, w = w,)?;
                     self.fmt_field(f, level)?;
                     self.out.write_all(b",\n")?;
                 }
 
                 write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-                self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
+                self.out.write_all(&vec![b' '; 4 * (level - 2)])?;
                 self.out.write_all(b"]")?;
             }
         } else {
