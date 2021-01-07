@@ -28,9 +28,7 @@ impl StructField {
         match self {
             StructField::Prim(_) => true,
             StructField::Array(Array { elements, .. }) => {
-                if let Some(StructField::Prim(ptr)) =
-                    elements.get(0).map(|k| k)
-                {
+                if let Some(StructField::Prim(ptr)) = elements.get(0) {
                     matches!(ptr.pty, PrimType::Char)
                 } else {
                     false

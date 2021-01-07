@@ -115,7 +115,7 @@ pub enum ExprKind {
 
     // rvalue
     Literal(super::lex::LitKind),
-    Array(Vec<Expr>),
+    //Array(Vec<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     AddrOf(Box<Expr>),
     Binary(BinOp, Box<Expr>, Box<Expr>),

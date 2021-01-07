@@ -2,9 +2,7 @@ use std::io::{BufRead, Seek, SeekFrom};
 
 use super::error::{SError, SErrorKind, SResult};
 use super::eval::{IntVal, Partial, Val};
-use super::scope::{
-    IndexSpace, Name, NameArray, NameStruct, Namespace, Scope,
-};
+use super::scope::{IndexSpace, Name, NameArray, Namespace, Scope};
 use super::*;
 use crate::{AddrBase, Error, Span, SymbolTable};
 
@@ -105,16 +103,16 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn eval_size(&mut self, expr: &ast::Expr) -> SResult<IntVal> {
         match self.eval(expr)? {
             Val::Integer(size) if size >= 0 => Ok(size),
-            Val::Integer(_neg) => Err(todo!()),
-            _ => Err(todo!()),
+            Val::Integer(_neg) => Err(SErrorKind::NegativeSize),
+            _ => Err(SErrorKind::InvalidType),
         }
     }
 
     fn eval_bool(&mut self, expr: &ast::Expr) -> SResult<bool> {
         match self.eval(expr)? {
-            Val::Integer(1) => Ok(true),
             Val::Integer(0) => Ok(false),
-            _ => Err(todo!()),
+            Val::Integer(_nz) => Ok(true),
+            _ => Err(SErrorKind::InvalidType),
         }
     }
 
@@ -209,11 +207,6 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             size,
             elements: is,
         }))
-    }
-
-    fn parse_prim(&mut self, ptr: &Ptr) -> SResult<()> {
-        self.seek(ptr.start + ptr.pty.size() as u64)?;
-        Ok(())
     }
 
     fn parse_struct(
@@ -313,7 +306,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 if let Name::Spec(spec) = name {
                     self.parse_struct(spec, &args)?
                 } else {
-                    return Err(todo!());
+                    return Err(SErrorKind::InvalidType);
                 }
             }
             ast::FieldKind::Prim(apty) => {
@@ -323,7 +316,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     pty: spty,
                     byte_order: ty.byte_order,
                 };
-                self.parse_prim(&ptr)?;
+                self.seek(ptr.start + ptr.pty.size() as u64)?;
                 Name::Field(ptr)
             }
         };
