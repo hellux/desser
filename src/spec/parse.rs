@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{AddrBase, BuiltIn, Error, ErrorType, Order, Sym, SymbolTable};
 
 use super::ast;
@@ -65,10 +63,11 @@ pub fn parse_file_spec(
     let mut parser = Parser::new(symtab);
 
     let file_spec =
-        parser.parse_inner_struct(tokens).map(|(structs, block)| {
+        parser.parse_inner_struct(tokens).map(|(structs, constants, block)| {
             ast::Struct {
                 formal_params: vec![],
                 structs,
+                constants,
                 block,
             }
         });
@@ -128,11 +127,11 @@ impl Parser {
         }
     }
 
-    fn expect_kind(&mut self, kind: TokKind) -> PResult<()> {
+    fn expect_kind(&mut self, kind: &TokKind) -> PResult<()> {
         let token = self.expect_token()?;
 
         match token.kind {
-            k if k == kind => Ok(()),
+            k if &k == kind => Ok(()),
             k => Err(self.err(UnexpectedToken(k))),
         }
     }
@@ -192,12 +191,13 @@ impl Parser {
         };
 
         if dn.delim == Brace {
-            let (structs, block) = self.parse_inner_struct(dn.stream)?;
+            let (structs, constants, block) = self.parse_inner_struct(dn.stream)?;
             Ok((
                 id,
                 ast::Struct {
                     formal_params,
                     structs,
+                    constants,
                     block,
                 },
             ))
@@ -220,7 +220,7 @@ impl Parser {
             params.push(self.expect_ident()?);
             while stream.not_empty() {
                 self.eat(&mut stream)?;
-                self.expect_kind(TokKind::Comma)?;
+                self.expect_kind(&TokKind::Comma)?;
                 self.eat(&mut stream)?;
                 params.push(self.expect_ident()?);
             }
@@ -232,8 +232,9 @@ impl Parser {
     fn parse_inner_struct(
         &mut self,
         mut stream: TokenStream,
-    ) -> PResult<(HashMap<Sym, ast::Struct>, ast::Block)> {
-        let mut structs = HashMap::new();
+    ) -> PResult<(Vec<(Sym, ast::Struct)>, Vec<(Sym, ast::Expr)>, ast::Block)> {
+        let mut structs = Vec::new();
+        let mut constants = Vec::new();
         while stream.not_empty() {
             match stream.peek().unwrap() {
                 TokTree::Token(Token {
@@ -242,7 +243,23 @@ impl Parser {
                 }) => {
                     self.eat(&mut stream)?; // def
                     let (id, st) = self.parse_struct(&mut stream)?;
-                    structs.insert(id, st);
+                    structs.push((id, st));
+                }
+                TokTree::Token(Token {
+                    kind: TokKind::Keyword(Keyword::Const),
+                    ..
+                }) => {
+                    self.eat(&mut stream)?; // const
+                    self.eat(&mut stream)?; // id
+                    let id = self.expect_ident()?;
+                    self.eat(&mut stream)?; // =
+                    self.expect_kind(&TokKind::Eq)?; // comma
+                    let expr_stream = stream.eat_until(&TokKind::Comma);
+                    if stream.not_empty() {
+                        self.eat(&mut stream)?; // comma
+                    }
+                    let expr = self.parse_expr(expr_stream)?;
+                    constants.push((id, expr));
                 }
                 _ => break,
             }
@@ -250,7 +267,7 @@ impl Parser {
 
         let block = self.parse_block(stream)?;
 
-        Ok((structs, block))
+        Ok((structs, constants, block))
     }
 
     fn parse_block(&mut self, mut stream: TokenStream) -> PResult<ast::Block> {
@@ -290,6 +307,12 @@ impl Parser {
                                 "structs may only be defined before fields",
                             ));
                         }
+                        Keyword::Const => {
+                            return Err(self.err_hint(
+                                UnexpectedKeyword(kw),
+                                "constants may only be defined before fields",
+                            ));
+                        }
                         _ => {
                             return Err(self.err(UnexpectedKeyword(kw)));
                         }
@@ -301,9 +324,11 @@ impl Parser {
                         self.eat(&mut stream)?; // comma, trailing is optional
                     }
 
-                    stmts.push(ast::Stmt::Field(
-                        self.parse_struct_field(field_stream)?,
-                    ));
+                    if field_stream.not_empty() {
+                        stmts.push(ast::Stmt::Field(
+                            self.parse_struct_field(field_stream)?,
+                        ));
+                    }
                 }
             }
         }
@@ -605,10 +630,10 @@ impl Parser {
         mut stream: TokenStream,
     ) -> PResult<ast::StdArray> {
         let mut type_stream = stream.eat_until(&TokKind::SemiColon);
-        let element_type = self.parse_field_type(&mut type_stream)?;
         if stream.not_empty() {
             self.eat(&mut stream)?; // semicolon, optional if no specified size
         }
+        let element_type = self.parse_field_type(&mut type_stream)?;
         self.assert_eof(
             &type_stream,
             "expected semicolon or closing bracket after array type",
@@ -694,7 +719,7 @@ impl Parser {
         let elem = self.expect_ident()?;
 
         self.eat(&mut stream)?; // in keword
-        self.expect_kind(TokKind::Keyword(Keyword::In))?;
+        self.expect_kind(&TokKind::Keyword(Keyword::In))?;
 
         let arr = self.parse_expr_fix(&mut stream, 100)?;
 

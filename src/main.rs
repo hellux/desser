@@ -106,7 +106,7 @@ fn main() -> Result<(), std::io::Error> {
             eprintln!("binary parsing..");
             match desser::parse_structure(&mut binary_file, &spec, &mut symtab)
             {
-                Ok(root) => {
+                Ok(Some(root)) => {
                     if opts.view {
                         eprintln!("viewing..");
                         println!(
@@ -119,6 +119,7 @@ fn main() -> Result<(), std::io::Error> {
                         );
                     }
                 }
+                Ok(None) => eprintln!("empty structure"),
                 Err(e) => {
                     errors.push(e);
                 }

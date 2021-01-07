@@ -32,6 +32,7 @@ pub enum TokenKind {
     Tilde,
     Percentage,
 
+    Eq,
     Lt,
     Gt,
     Ampersand,
@@ -161,7 +162,7 @@ impl Cursor<'_> {
                     self.eat();
                     Eq2
                 }
-                _ => Unknown,
+                _ => Eq,
             },
             '<' => match self.peek() {
                 '<' => {

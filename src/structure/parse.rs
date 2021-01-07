@@ -226,6 +226,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             };
             static_space.insert(*sym, name);
         }
+        for (sym, expr) in &spec.constants {
+            let name = match self.eval_partial(expr)? {
+                Partial::Value(val) => Name::Value(val),
+                Partial::Name(name) => Name::Reference(name),
+            };
+            static_space.insert(*sym, name);
+        }
         for (sym, spec) in &spec.structs {
             let name = Name::Spec(spec);
             static_space.insert(*sym, name);

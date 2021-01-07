@@ -83,7 +83,9 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
     fn fmt_array(&mut self, arr: &Array, level: usize) -> io::Result<()> {
         let w = format!("{}", arr.elements.len()).len();
 
-        write!(self.out, "0x{:x} ", arr.size / 8)?;
+        if level > 1 {
+            write!(self.out, "0x{:x} ", arr.size / 8)?;
+        }
 
         if !arr.elements.is_empty() {
             if let StructField::Prim(Ptr {
@@ -95,7 +97,10 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                     self.fmt_field(f, level)?;
                 }
             } else {
-                self.out.write_all(b"[\n")?;
+                if level > 1 {
+                    self.out.write_all(b"[\n")?;
+                }
+
                 for (i, f) in arr.elements.iter().enumerate() {
                     self.prepend_addr(f)?;
                     self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
@@ -104,9 +109,11 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                     self.out.write_all(b",\n")?;
                 }
 
-                write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
-                self.out.write_all(&vec![b' '; 4 * (level - 2)])?;
-                self.out.write_all(b"]")?;
+                if level > 1 {
+                    write!(self.out, "{:l$}", "", l = self.addr_len + 6)?;
+                    self.out.write_all(&vec![b' '; 4 * (level - 2)])?;
+                    self.out.write_all(b"]")?;
+                }
             }
         } else {
             self.out.write_all(b"[]")?;

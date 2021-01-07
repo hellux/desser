@@ -18,8 +18,8 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
     f: &'s mut R,
     root_spec: &'s ast::Struct,
     symtab: &mut SymbolTable,
-) -> Result<StructField, Error> {
-    Ok(parse::parse(f, root_spec, symtab)?.try_into().unwrap())
+) -> Result<Option<StructField>, Error> {
+    Ok(parse::parse(f, root_spec, symtab)?.try_into().ok())
 }
 
 #[derive(Clone, Debug)]

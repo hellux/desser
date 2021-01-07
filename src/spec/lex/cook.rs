@@ -52,6 +52,7 @@ pub enum TokKind {
     Question,
     Tilde,
 
+    Eq,
     Lt,
     Gt,
     Ampersand,
@@ -80,6 +81,7 @@ pub enum Delim {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Keyword {
     Def,
+    Const,
     If,
     Else,
     For,
@@ -198,6 +200,7 @@ impl<'a> TokenCooker<'a> {
             }
             raw::TokenKind::Ident => Some(self.cook_ident(start)),
 
+            raw::TokenKind::Eq => Some(Eq),
             raw::TokenKind::Lt => Some(Lt),
             raw::TokenKind::Gt => Some(Gt),
             raw::TokenKind::Ampersand => Some(Ampersand),
@@ -293,6 +296,7 @@ impl<'a> TokenCooker<'a> {
 
         match id {
             "def" => Keyword(Keyword::Def),
+            "const" => Keyword(Keyword::Const),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
             "for" => Keyword(Keyword::For),
