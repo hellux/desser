@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{AddrBase, Error, ErrorType, Order, Sym, SymbolTable};
+use crate::{AddrBase, BuiltIn, Error, ErrorType, Order, Sym, SymbolTable};
 
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
@@ -719,9 +719,9 @@ impl Parser {
         let mut lhs_span = self.tree.span();
         let mut lhs_kind = match self.tree.take() {
             TokTree::Token(token) => match token.kind {
-                TokKind::Dot => {
-                    ast::ExprKind::Variable(self.symtab.sym_self())
-                }
+                TokKind::Dot => ast::ExprKind::Variable(
+                    self.symtab.builtin(BuiltIn::IdentSelf),
+                ),
                 TokKind::Literal(litkind) => ast::ExprKind::Literal(litkind),
                 TokKind::Ident(sym) => ast::ExprKind::Variable(sym),
                 kind => {

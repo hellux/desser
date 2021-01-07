@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 
 use super::error::{SErrorKind, SResult};
-use super::scope::{Name, NameArray, NameFunction, NameStruct, Scope};
+use super::scope::{Name, NameArray, NameFunc, NameStruct, Scope};
 use super::*;
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
 use crate::spec::LitKind;
@@ -66,8 +66,8 @@ impl Val {
 
     pub fn bytes(&self) -> Vec<u8> {
         match self {
-            Val::Integer(val) => val.to_le_bytes().iter().cloned().collect(),
-            Val::Float(val) => val.to_le_bytes().iter().cloned().collect(),
+            Val::Integer(val) => val.to_le_bytes().to_vec(),
+            Val::Float(val) => val.to_le_bytes().to_vec(),
             Val::Compound(bytes, _) => bytes.clone(),
         }
     }
@@ -98,7 +98,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     Val::Compound(bytes.clone(), (bytes.len() * 8) as u64)
                 }
             },
-            ExprKind::Array(elems) => todo!(),
+            //ExprKind::Array(elems) => todo!(),
             ExprKind::Call(func, args) => self.eval_call(func, args)?,
             ExprKind::AddrOf(obj) => self.eval_addrof(obj)?,
             ExprKind::Binary(op, lhs, rhs) => {
@@ -139,12 +139,12 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn eval_call(&mut self, func: &'a Expr, args: &'a [Expr]) -> SResult<Val> {
-        if let Name::Function(nfunc) = self.eval_partial(func)?.name()? {
+        if let Name::Func(nfunc) = self.eval_partial(func)?.name()? {
             match (nfunc, args) {
-                (NameFunction::AddrOf, [lval]) => self.eval_addrof(lval),
-                (NameFunction::SizeOf, [lval]) => self.eval_sizeof(lval),
-                (NameFunction::EndOf, [lval]) => self.eval_endof(lval),
-                (NameFunction::Len, [lval]) => self.eval_len(lval),
+                (NameFunc::AddrOf, [lval]) => self.eval_addrof(lval),
+                (NameFunc::SizeOf, [lval]) => self.eval_sizeof(lval),
+                (NameFunc::EndOf, [lval]) => self.eval_endof(lval),
+                (NameFunc::Len, [lval]) => self.eval_len(lval),
                 _ => Err(SErrorKind::InvalidType),
             }
         } else {
@@ -261,8 +261,12 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             BinOp::Mul => Val::Float(lhs * rhs),
             BinOp::Div => Val::Float(lhs / rhs),
             BinOp::Rem => Val::Float(lhs % rhs),
-            BinOp::Eq => Val::Integer((lhs == rhs) as IntVal),
-            BinOp::Neq => Val::Integer((lhs != rhs) as IntVal),
+            BinOp::Eq => {
+                Val::Integer(((lhs - rhs).abs() < f64::EPSILON) as IntVal)
+            }
+            BinOp::Neq => {
+                Val::Integer(((lhs - rhs).abs() > f64::EPSILON) as IntVal)
+            }
             BinOp::And => Val::Integer((lhs != 0.0 && rhs != 0.0) as IntVal),
             BinOp::Or => Val::Integer((lhs != 0.0 || rhs != 0.0) as IntVal),
             BinOp::Lt => Val::Integer((lhs < rhs) as IntVal),

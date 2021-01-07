@@ -1,4 +1,5 @@
-use crate::{AddrBase, Order, StructSpecs, Sym};
+use crate::{AddrBase, Order, Sym};
+use std::collections::HashMap;
 
 use super::Span;
 
@@ -7,7 +8,7 @@ use super::Span;
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub formal_params: Vec<Sym>,
-    pub structs: StructSpecs,
+    pub structs: HashMap<Sym, Struct>,
     pub block: Block,
 }
 
@@ -115,7 +116,7 @@ pub enum ExprKind {
 
     // rvalue
     Literal(super::lex::LitKind),
-    Array(Vec<Expr>),
+    //Array(Vec<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     AddrOf(Box<Expr>),
     Binary(BinOp, Box<Expr>, Box<Expr>),

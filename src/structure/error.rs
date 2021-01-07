@@ -2,22 +2,14 @@ use crate::{Error, ErrorType, Span, Sym, SymbolTable};
 
 #[derive(Debug)]
 pub enum SErrorKind {
-    // errors from spec (could potentially be checked without binary)
-    StructNotInScope(Sym),
     IdentifierNotInScope(Sym),
-    NonStructMemberAccess,
-    NonArrayIndexAccess,
     FormalActualMismatch,
-    SelfNotValid,
     InvalidType,
-    NotAValue,
     NotAStruct,
     NotAnArray,
     NotAnIntegerValue,
     NotAFloatValue,
-    NotAnLValue,
-
-    // errors while reading binary
+    NegativeSize,
     IndexNotFound(u64),
     InvalidValue(u64),
     EndOfFile(u64),
@@ -37,9 +29,6 @@ pub struct SError {
 impl Error {
     pub fn from(s: SError, symtab: &SymbolTable) -> Self {
         let desc = match s.kind {
-            SErrorKind::StructNotInScope(sym) => {
-                format!("struct '{}' not in scope", symtab.name(sym).unwrap())
-            }
             SErrorKind::IdentifierNotInScope(sym) => format!(
                 "identifier '{}' not in scope",
                 String::from(symtab.name(sym).unwrap()),

@@ -98,12 +98,26 @@ pub enum ErrorType {
 }
 
 pub type Sym = u16;
-#[derive(Clone, Debug)]
-pub enum SymAccess<T> {
-    Sym(Sym),
-    Index(T),
+
+enum BuiltIn {
+    IdentSelf,
+    FuncLen,
+    FuncAddrOf,
+    FuncSizeOf,
+    FuncEndOf,
 }
-type StructSpecs = HashMap<Sym, spec::ast::Struct>;
+
+impl BuiltIn {
+    fn name(&self) -> &str {
+        match self {
+            Self::IdentSelf => "self",
+            Self::FuncLen => "len",
+            Self::FuncAddrOf => "addrof",
+            Self::FuncSizeOf => "sizeof",
+            Self::FuncEndOf => "endof",
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct SymbolTable {
@@ -111,15 +125,19 @@ pub struct SymbolTable {
     arr: Vec<String>,
 }
 
-pub const SELF_NAME: &str = "self";
-
 impl SymbolTable {
     fn new() -> Self {
         let mut tbl = SymbolTable {
             map: HashMap::new(),
             arr: Vec::new(),
         };
-        tbl.insert(SELF_NAME);
+
+        tbl.insert(BuiltIn::IdentSelf.name());
+        tbl.insert(BuiltIn::FuncLen.name());
+        tbl.insert(BuiltIn::FuncAddrOf.name());
+        tbl.insert(BuiltIn::FuncSizeOf.name());
+        tbl.insert(BuiltIn::FuncEndOf.name());
+
         tbl
     }
 
@@ -138,7 +156,7 @@ impl SymbolTable {
         }
     }
 
-    fn sym_self(&self) -> Sym {
-        *self.map.get(SELF_NAME).unwrap()
+    fn builtin(&self, b: BuiltIn) -> Sym {
+        *self.map.get(b.name()).unwrap()
     }
 }
