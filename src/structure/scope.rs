@@ -172,6 +172,16 @@ impl<'n> Scope<'n> {
         Err(SErrorKind::IdentifierNotInScope(sym))
     }
 
+    pub fn insert_local(&mut self, sym: Sym, name: Name<'n>) {
+        self.structs
+            .last_mut()
+            .unwrap()
+            .local_scopes
+            .last_mut()
+            .unwrap()
+            .insert(sym, name);
+    }
+
     pub fn insert_field(&mut self, sym_opt: Option<Sym>, name: Name<'n>) {
         let sym = if let Some(sym) = sym_opt {
             sym

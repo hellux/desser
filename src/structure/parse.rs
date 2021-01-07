@@ -121,6 +121,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
     }
 
+    fn eval_copy(&mut self, expr: &ast::Expr) -> SResult<Name<'s>> {
+        Ok(match self.eval_partial(expr)? {
+            Partial::Value(val) => Name::Value(val),
+            Partial::Name(name) => Name::Reference(name),
+        })
+    }
+
     fn parse_std_array(&mut self, arr: &ast::StdArray) -> SResult<Name<'s>> {
         let (min_size, max_size) = match &arr.size {
             ast::ArraySize::Exactly(n) => {
@@ -220,22 +227,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         let mut static_space = Namespace::new();
         for (sym, expr) in spec.formal_params.iter().zip(params.iter()) {
-            let name = match self.eval_partial(expr)? {
-                Partial::Value(val) => Name::Value(val),
-                Partial::Name(name) => Name::Reference(name),
-            };
-            static_space.insert(*sym, name);
+            static_space.insert(*sym, self.eval_copy(expr)?);
         }
         for (sym, expr) in &spec.constants {
-            let name = match self.eval_partial(expr)? {
-                Partial::Value(val) => Name::Value(val),
-                Partial::Name(name) => Name::Reference(name),
-            };
-            static_space.insert(*sym, name);
+            static_space.insert(*sym, self.eval_copy(expr)?);
         }
         for (sym, spec) in &spec.structs {
-            let name = Name::Spec(spec);
-            static_space.insert(*sym, name);
+            static_space.insert(*sym, Name::Spec(spec));
         }
 
         self.scope.enter_struct(self.pos, static_space);
@@ -252,6 +250,10 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         for s in block {
             match s {
                 ast::Stmt::Field(f) => self.parse_field(&f)?,
+                ast::Stmt::Let(sym, expr) => {
+                    let name = self.eval_copy(expr)?;
+                    self.scope.insert_local(*sym, name);
+                }
                 ast::Stmt::If(if_stmt) => {
                     let body = if self.eval_bool(&if_stmt.cond)? {
                         &if_stmt.if_body

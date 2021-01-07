@@ -17,6 +17,7 @@ pub type Block = Vec<Stmt>;
 #[derive(Clone, Debug)]
 pub enum Stmt {
     Field(Field),
+    Let(Sym, Expr),
     If(IfStmt),
     Constrain(Vec<Expr>),
     Debug(Vec<Expr>),

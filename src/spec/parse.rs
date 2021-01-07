@@ -62,15 +62,14 @@ pub fn parse_file_spec(
 ) -> (Result<ast::Struct, Error>, SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
-    let file_spec =
-        parser.parse_inner_struct(tokens).map(|(structs, constants, block)| {
-            ast::Struct {
-                formal_params: vec![],
-                structs,
-                constants,
-                block,
-            }
-        });
+    let file_spec = parser.parse_inner_struct(tokens).map(
+        |(structs, constants, block)| ast::Struct {
+            formal_params: vec![],
+            structs,
+            constants,
+            block,
+        },
+    );
     let (symtab, errors) = parser.consume();
 
     (
@@ -191,7 +190,8 @@ impl Parser {
         };
 
         if dn.delim == Brace {
-            let (structs, constants, block) = self.parse_inner_struct(dn.stream)?;
+            let (structs, constants, block) =
+                self.parse_inner_struct(dn.stream)?;
             Ok((
                 id,
                 ast::Struct {
@@ -232,7 +232,8 @@ impl Parser {
     fn parse_inner_struct(
         &mut self,
         mut stream: TokenStream,
-    ) -> PResult<(Vec<(Sym, ast::Struct)>, Vec<(Sym, ast::Expr)>, ast::Block)> {
+    ) -> PResult<(Vec<(Sym, ast::Struct)>, Vec<(Sym, ast::Expr)>, ast::Block)>
+    {
         let mut structs = Vec::new();
         let mut constants = Vec::new();
         while stream.not_empty() {
@@ -250,15 +251,7 @@ impl Parser {
                     ..
                 }) => {
                     self.eat(&mut stream)?; // const
-                    self.eat(&mut stream)?; // id
-                    let id = self.expect_ident()?;
-                    self.eat(&mut stream)?; // =
-                    self.expect_kind(&TokKind::Eq)?; // comma
-                    let expr_stream = stream.eat_until(&TokKind::Comma);
-                    if stream.not_empty() {
-                        self.eat(&mut stream)?; // comma
-                    }
-                    let expr = self.parse_expr(expr_stream)?;
+                    let (id, expr) = self.parse_assign(&mut stream)?;
                     constants.push((id, expr));
                 }
                 _ => break,
@@ -282,6 +275,10 @@ impl Parser {
                     let kw = *kw;
                     self.eat(&mut stream)?; // keyword
                     match kw {
+                        Keyword::Let => {
+                            let (id, expr) = self.parse_assign(&mut stream)?;
+                            stmts.push(ast::Stmt::Let(id, expr));
+                        }
                         Keyword::If => {
                             stmts.push(ast::Stmt::If(
                                 self.parse_if(&mut stream)?,
@@ -304,13 +301,13 @@ impl Parser {
                         Keyword::Def => {
                             return Err(self.err_hint(
                                 UnexpectedKeyword(kw),
-                                "structs may only be defined before fields",
+                                "may only be defined in struct header",
                             ));
                         }
                         Keyword::Const => {
                             return Err(self.err_hint(
                                 UnexpectedKeyword(kw),
-                                "constants may only be defined before fields",
+                                "may only be defined in struct header",
                             ));
                         }
                         _ => {
@@ -334,6 +331,22 @@ impl Parser {
         }
 
         Ok(stmts)
+    }
+
+    fn parse_assign(
+        &mut self,
+        stream: &mut TokenStream,
+    ) -> PResult<(Sym, ast::Expr)> {
+        self.eat(stream)?; // id
+        let id = self.expect_ident()?;
+        self.eat(stream)?; // =
+        self.expect_kind(&TokKind::Eq)?;
+        let expr_stream = stream.eat_until(&TokKind::Comma);
+        if stream.not_empty() {
+            self.eat(stream)?; // comma
+        }
+        let expr = self.parse_expr(expr_stream)?;
+        Ok((id, expr))
     }
 
     fn parse_if(&mut self, stream: &mut TokenStream) -> PResult<ast::IfStmt> {

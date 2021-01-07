@@ -81,6 +81,7 @@ pub enum Delim {
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Keyword {
     Def,
+    Let,
     Const,
     If,
     Else,
@@ -297,6 +298,7 @@ impl<'a> TokenCooker<'a> {
         match id {
             "def" => Keyword(Keyword::Def),
             "const" => Keyword(Keyword::Const),
+            "let" => Keyword(Keyword::Let),
             "if" => Keyword(Keyword::If),
             "else" => Keyword(Keyword::Else),
             "for" => Keyword(Keyword::For),
