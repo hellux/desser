@@ -5,6 +5,7 @@
 syn keyword dsrStmt constrain debug
 syn keyword dsrConditional if else
 syn keyword dsrLoop for in
+syn keyword dsrLet let const
 syn keyword dsrDef def nextgroup=dsrStruct skipwhite
 syn keyword dsrAttr addr offset skip align baddr boffset bskip balign order constraint
 syn match dsrStruct "\h\w*" display contained
@@ -39,6 +40,7 @@ syn match dsrCommentLine display "//.*" contains=dsrTodo
 syn region dsrCommentBlock matchgroup=dsrCommentBlock start="/\*" end="\*/" display contains=dsrTodo,dsrCommentBlockNest
 syn region dsrCommentBlockNest matchgroup=dsrCommentBlock start="/\*" end="\*/" display contains=dsrTodo,dsrCommentBlockNest contained transparent
 
+hi def link dsrLet Keyword
 hi def link dsrStmt Keyword
 hi def link dsrConditional Keyword
 hi def link dsrLoop Keyword
