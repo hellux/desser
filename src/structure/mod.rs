@@ -6,6 +6,8 @@ mod scope;
 mod structure;
 mod view;
 
+use std::convert::TryInto;
+
 use crate::spec::ast;
 use crate::{Error, Order, Sym, SymbolTable};
 use std::io::{BufRead, Seek};
@@ -17,7 +19,7 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
     root_spec: &'s ast::Struct,
     symtab: &mut SymbolTable,
 ) -> Result<StructField, Error> {
-    Ok(parse::parse(f, root_spec, symtab)?.into())
+    Ok(parse::parse(f, root_spec, symtab)?.try_into().unwrap())
 }
 
 #[derive(Clone, Debug)]

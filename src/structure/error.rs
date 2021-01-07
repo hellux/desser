@@ -40,33 +40,25 @@ impl Error {
             SErrorKind::StructNotInScope(sym) => {
                 format!("struct '{}' not in scope", symtab.name(sym).unwrap())
             }
-            SErrorKind::IdentifierNotInScope(sym) => {
-                format!(
-                    "identifier '{}' not in scope",
-                    String::from(symtab.name(sym).unwrap()),
-                )
-            }
-            SErrorKind::InvalidValue(val) => {
-                format!(
-                    "value '{}' is not valid here at 0x{:x}",
-                    val,
-                    s.pos / 8
-                )
-            }
-            SErrorKind::EndOfFile(size) => {
-                format!(
-                    "end of file reached at {:x} while parsing field at {:x}",
-                    size / 8,
-                    s.pos / 8
-                )
-            }
-            SErrorKind::AddrBeforeBase(base) => {
-                format!(
-                    "jump to {:x} which is before current struct base at {:x}",
-                    s.pos / 8,
-                    base / 8
-                )
-            }
+            SErrorKind::IdentifierNotInScope(sym) => format!(
+                "identifier '{}' not in scope",
+                String::from(symtab.name(sym).unwrap()),
+            ),
+            SErrorKind::InvalidValue(val) => format!(
+                "value '{}' is not valid here at 0x{:x}",
+                val,
+                s.pos / 8
+            ),
+            SErrorKind::EndOfFile(size) => format!(
+                "end of file reached at {:x} while parsing field at {:x}",
+                size / 8,
+                s.pos / 8
+            ),
+            SErrorKind::AddrBeforeBase(base) => format!(
+                "jump to {:x} which is before current struct base at {:x}",
+                s.pos / 8,
+                base / 8
+            ),
             SErrorKind::FailedConstraint => {
                 format!("unable to match constraint at 0x{:x}", s.pos / 8,)
             }

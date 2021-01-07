@@ -345,7 +345,9 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         self.span = field.span;
 
         let name = self.parse_field_type(&field.ty)?;
-        self.scope.insert_field(field.id, name);
+        if !field.hidden {
+            self.scope.insert_field(field.id, name);
+        }
 
         Ok(())
     }

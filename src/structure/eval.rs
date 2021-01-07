@@ -169,15 +169,17 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn eval_endof(&mut self, expr: &'a Expr) -> SResult<Val> {
-        let start = self.eval_partial(expr)?
+        let start = self
+            .eval_partial(expr)?
             .name()?
             .start()
             .ok_or(SErrorKind::InvalidType)?;
-        let size = self.eval_partial(expr)?
+        let size = self
+            .eval_partial(expr)?
             .name()?
             .size()
             .ok_or(SErrorKind::InvalidType)?;
-        Ok(Val::Integer((start-size) as IntVal / 8))
+        Ok(Val::Integer((start - size) as IntVal / 8))
     }
 
     fn eval_len(&mut self, expr: &'a Expr) -> SResult<Val> {

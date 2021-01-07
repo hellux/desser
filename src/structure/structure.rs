@@ -1,5 +1,6 @@
 use super::scope::{Name, NameArray, NameStruct};
 use super::*;
+use std::convert::{TryFrom, TryInto};
 
 #[derive(Debug, Clone)]
 pub enum StructField {
@@ -56,43 +57,59 @@ impl StructField {
     }
 }
 
-impl<'n> From<Name<'n>> for StructField {
-    fn from(name: Name<'n>) -> Self {
+impl<'n> TryFrom<Name<'n>> for StructField {
+    type Error = ();
+    fn try_from(name: Name<'n>) -> Result<Self, Self::Error> {
         match name {
-            Name::Struct(nst) => StructField::Struct(nst.into()),
-            Name::Array(narr) => StructField::Array(narr.into()),
-            Name::Field(ptr) => StructField::Prim(ptr),
-            _ => panic!(),
+            Name::Struct(nst) => nst.try_into(),
+            Name::Array(narr) => narr.try_into(),
+            Name::Field(ptr) => Ok(StructField::Prim(ptr)),
+            _ => Err(()),
         }
     }
 }
 
-impl<'n> From<NameStruct<'n>> for Struct {
-    fn from(nst: NameStruct<'n>) -> Self {
+impl<'n> TryFrom<NameStruct<'n>> for StructField {
+    type Error = ();
+    fn try_from(nst: NameStruct<'n>) -> Result<Self, Self::Error> {
         let mut fields: Vec<(Sym, StructField)> = nst
             .fields
             .into_iter()
-            .map(|(sym, f)| (sym, f.into()))
+            .filter_map(|(sym, f)| match (sym, f.try_into()) {
+                (s, Ok(t)) => Some((s, t)),
+                _ => None,
+            })
             .collect();
 
-        fields.sort_by_key(|(_, f)| f.start());
+        match fields.len() {
+            0 => Err(()),
+            1 => Ok(fields.remove(0).1),
+            _ => {
+                fields.sort_by_key(|(_, f)| f.start());
 
-        Struct {
-            start: nst.start,
-            size: nst.size,
-            fields,
+                Ok(StructField::Struct(Struct {
+                    start: nst.start,
+                    size: nst.size,
+                    fields,
+                }))
+            }
         }
     }
 }
 
-impl<'n> From<NameArray<'n>> for Array {
-    fn from(narr: NameArray<'n>) -> Self {
-        let elements = narr.elements.into_iter().map(|e| e.into()).collect();
+impl<'n> TryFrom<NameArray<'n>> for StructField {
+    type Error = ();
+    fn try_from(narr: NameArray<'n>) -> Result<Self, Self::Error> {
+        let elements = narr
+            .elements
+            .into_iter()
+            .filter_map(|e| e.try_into().ok())
+            .collect();
 
-        Array {
+        Ok(StructField::Array(Array {
             start: narr.start,
             size: narr.size,
             elements,
-        }
+        }))
     }
 }

@@ -147,8 +147,7 @@ impl<'n> Scope<'n> {
             .local_scopes
             .iter()
             .rev()
-            .flat_map(|s| s.get(&sym))
-            .next()
+            .find_map(|s| s.get(&sym))
         {
             return Ok(&name);
         }
@@ -158,10 +157,9 @@ impl<'n> Scope<'n> {
             .blocks
             .iter()
             .rev()
-            .flat_map(|b| b.fields.get(&sym))
-            .next()
+            .find_map(|b| b.fields.get(&sym))
         {
-            return Ok(&name)
+            return Ok(&name);
         }
 
         /* check all above structs for struct specs and parameters */
@@ -182,7 +180,8 @@ impl<'n> Scope<'n> {
             self.unnamed
         };
 
-        let curr = &mut self.structs.last_mut().unwrap().blocks.last_mut().unwrap();
+        let curr =
+            &mut self.structs.last_mut().unwrap().blocks.last_mut().unwrap();
 
         let start = name.start().unwrap();
         let size = name.size().unwrap();
