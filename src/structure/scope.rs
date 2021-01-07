@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
+use crate::spec::ast;
+use crate::BuiltIn::*;
+use crate::SymbolTable;
+
 use super::error::{SErrorKind, SResult};
 use super::eval::Val;
 use super::*;
-use crate::spec::ast;
-use crate::SymbolTable;
 
 pub type Namespace<'n> = HashMap<Sym, Name<'n>>;
 pub type IndexSpace<'n> = Vec<Name<'n>>;
@@ -16,7 +18,7 @@ pub enum Name<'n> {
     Struct(NameStruct<'n>),
     Array(NameArray<'n>),
     Spec(&'n ast::Struct),
-    Function(NameFunction),
+    Func(NameFunc),
     Reference(&'n Name<'n>),
 }
 
@@ -35,7 +37,7 @@ pub struct NameArray<'n> {
 }
 
 #[derive(Clone, Debug)]
-pub enum NameFunction {
+pub enum NameFunc {
     AddrOf,
     SizeOf,
     EndOf,
@@ -107,12 +109,10 @@ pub struct Scope<'n> {
 impl<'n> Scope<'n> {
     pub fn new(file_length: u64, st: &mut SymbolTable) -> Self {
         let mut ns = Namespace::new();
-
-        let self_sym = st.insert("self");
-        ns.insert(st.insert("len"), Name::Function(NameFunction::Len));
-        ns.insert(st.insert("addrof"), Name::Function(NameFunction::SizeOf));
-        ns.insert(st.insert("sizeof"), Name::Function(NameFunction::SizeOf));
-        ns.insert(st.insert("endof"), Name::Function(NameFunction::SizeOf));
+        ns.insert(st.builtin(FuncLen), Name::Func(NameFunc::Len));
+        ns.insert(st.builtin(FuncAddrOf), Name::Func(NameFunc::AddrOf));
+        ns.insert(st.builtin(FuncSizeOf), Name::Func(NameFunc::SizeOf));
+        ns.insert(st.builtin(FuncEndOf), Name::Func(NameFunc::EndOf));
 
         let builtins = StructSpace {
             static_scope: ns,
@@ -125,7 +125,7 @@ impl<'n> Scope<'n> {
         };
         Scope {
             structs: vec![builtins],
-            self_sym,
+            self_sym: st.builtin(IdentSelf),
             unnamed: Sym::max_value(),
         }
     }

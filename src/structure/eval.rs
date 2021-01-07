@@ -1,7 +1,7 @@
 use std::io::{Read, Seek};
 
 use super::error::{SErrorKind, SResult};
-use super::scope::{Name, NameArray, NameFunction, NameStruct, Scope};
+use super::scope::{Name, NameArray, NameFunc, NameStruct, Scope};
 use super::*;
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
 use crate::spec::LitKind;
@@ -139,12 +139,12 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn eval_call(&mut self, func: &'a Expr, args: &'a [Expr]) -> SResult<Val> {
-        if let Name::Function(nfunc) = self.eval_partial(func)?.name()? {
+        if let Name::Func(nfunc) = self.eval_partial(func)?.name()? {
             match (nfunc, args) {
-                (NameFunction::AddrOf, [lval]) => self.eval_addrof(lval),
-                (NameFunction::SizeOf, [lval]) => self.eval_sizeof(lval),
-                (NameFunction::EndOf, [lval]) => self.eval_endof(lval),
-                (NameFunction::Len, [lval]) => self.eval_len(lval),
+                (NameFunc::AddrOf, [lval]) => self.eval_addrof(lval),
+                (NameFunc::SizeOf, [lval]) => self.eval_sizeof(lval),
+                (NameFunc::EndOf, [lval]) => self.eval_endof(lval),
+                (NameFunc::Len, [lval]) => self.eval_len(lval),
                 _ => Err(SErrorKind::InvalidType),
             }
         } else {
