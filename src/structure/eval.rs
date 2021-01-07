@@ -179,7 +179,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .name()?
             .size()
             .ok_or(SErrorKind::InvalidType)?;
-        Ok(Val::Integer((start - size) as IntVal / 8))
+        Ok(Val::Integer((start + size) as IntVal / 8))
     }
 
     fn eval_len(&mut self, expr: &'a Expr) -> SResult<Val> {
