@@ -31,6 +31,20 @@ pub struct Ptr {
     pub byte_order: Order,
 }
 
+#[derive(Clone, Debug)]
+struct StructT<S> {
+    pub start: BitPos,
+    pub size: BitSize,
+    pub fields: S,
+}
+
+#[derive(Clone, Debug)]
+struct ArrayT<A> {
+    pub start: BitPos,
+    pub size: BitSize,
+    pub elements: A,
+}
+
 type PrimType = crate::PrimType<u8>;
 
 impl PrimType {

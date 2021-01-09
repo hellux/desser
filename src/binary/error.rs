@@ -6,6 +6,7 @@ pub enum SErrorKind {
     IdentifierNotInScope(Sym),
     FormalActualMismatch,
     InvalidType,
+    NotAField,
     NotAStruct,
     NotAnArray,
     NotAnIntegerValue,

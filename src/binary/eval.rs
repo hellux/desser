@@ -1,12 +1,12 @@
 use std::io::{Read, Seek};
 
 use super::error::{SErrorKind, SResult};
-use super::scope::{Name, NameArray, NameFunc, NameStruct, Scope};
+use super::scope::{Name, NameArray, NameField, NameFunc, NameStruct, Scope};
 use super::*;
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
 use crate::spec::LitKind;
 
-pub fn eval<'a, R: Read + Seek>(
+pub(super) fn eval<'a, R: Read + Seek>(
     expr: &'a Expr,
     f: &mut R,
     scope: &Scope,
@@ -14,7 +14,7 @@ pub fn eval<'a, R: Read + Seek>(
     Eval::new(f, scope).eval(expr)
 }
 
-pub fn eval_partial<'a, R: Read + Seek>(
+pub(super) fn eval_partial<'a, R: Read + Seek>(
     expr: &'a Expr,
     f: &'a mut R,
     scope: &'a Scope<'a>,
@@ -33,13 +33,13 @@ pub enum Val {
 }
 
 #[derive(Clone, Debug)]
-pub enum Partial<'a> {
+pub(super) enum Partial<'a> {
     Value(Val),
-    Name(&'a Name<'a>),
+    Name(Name<'a>),
 }
 
 impl<'a> Partial<'a> {
-    pub fn name(self) -> SResult<&'a Name<'a>> {
+    pub fn name(self) -> SResult<Name<'a>> {
         if let Partial::Name(name) = self {
             Ok(name)
         } else {
@@ -114,28 +114,38 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         Ok(match &expr.kind {
             ExprKind::Variable(sym) => Partial::Name(self.scope.get(*sym)?),
             ExprKind::Member(st, sym) => {
-                let struct_name = self.eval_partial(&st)?.name()?;
-                Partial::Name(struct_name.get_field(*sym)?)
+                let struct_name = self.eval_partial(&st)?.name()?.field()?;
+                Partial::Name(Name::Field(struct_name.get_field(*sym)?))
             }
             ExprKind::Index(arr, idx_expr) => {
-                let arr_name = self.eval_partial(&arr)?.name()?;
+                let arr_name = self.eval_partial(&arr)?.name()?.field()?;
                 let idx = self.eval(&idx_expr)?;
-                Partial::Name(arr_name.get_element(idx.int()? as usize)?)
+                Partial::Name(Name::Field(
+                    arr_name.get_element(idx.int()? as usize)?,
+                ))
             }
             _ => Partial::Value(self.eval(expr)?),
         })
     }
 
-    fn eval_name(&mut self, name: &'a Name<'a>) -> SResult<Val> {
+    fn eval_name(&mut self, name: Name<'a>) -> SResult<Val> {
         Ok(match name {
             Name::Value(val) => val.clone(),
-            Name::Field(ptr) => ptr.eval(self.f),
-            Name::Array(NameArray { start, size, .. })
-            | Name::Struct(NameStruct { start, size, .. }) => Val::Compound(
-                format::read_bytes(*start, *size, Order::LittleEndian, self.f),
-                *size,
-            ),
-            Name::Reference(_) => unreachable!(),
+            Name::Field(nf) => match nf {
+                NameField::Prim(ptr) => ptr.eval(self.f),
+                NameField::Array(NameArray { start, size, .. })
+                | NameField::Struct(NameStruct { start, size, .. }) => {
+                    Val::Compound(
+                        format::read_bytes(
+                            *start,
+                            *size,
+                            Order::LittleEndian,
+                            self.f,
+                        ),
+                        *size,
+                    )
+                }
+            },
             _ => return Err(SErrorKind::InvalidType),
         })
     }
@@ -157,6 +167,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     fn eval_addrof(&mut self, expr: &'a Expr) -> SResult<Val> {
         self.eval_partial(expr)?
             .name()?
+            .field()?
             .start()
             .map(|a| Val::Integer(BytePos::from(a).size() as IntVal))
             .ok_or(SErrorKind::InvalidType)
@@ -165,6 +176,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     fn eval_sizeof(&mut self, expr: &'a Expr) -> SResult<Val> {
         self.eval_partial(expr)?
             .name()?
+            .field()?
             .size()
             .map(|s| Val::Integer(ByteSize::from(s).size() as IntVal))
             .ok_or(SErrorKind::InvalidType)
@@ -174,22 +186,26 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         let start = self
             .eval_partial(expr)?
             .name()?
+            .field()?
             .start()
             .ok_or(SErrorKind::InvalidType)?;
         let size = self
             .eval_partial(expr)?
             .name()?
+            .field()?
             .size()
             .ok_or(SErrorKind::InvalidType)?;
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
     fn eval_len(&mut self, expr: &'a Expr) -> SResult<Val> {
-        Ok(Val::Integer(match self.eval_partial(expr)?.name()? {
-            Name::Struct(nst) => nst.fields.len(),
-            Name::Array(narr) => narr.elements.len(),
-            _ => return Err(SErrorKind::InvalidType),
-        } as IntVal))
+        Ok(Val::Integer(
+            match self.eval_partial(expr)?.name()?.field()? {
+                NameField::Struct(nst) => nst.fields.len(),
+                NameField::Array(narr) => narr.elements.len(),
+                _ => return Err(SErrorKind::InvalidType),
+            } as IntVal,
+        ))
     }
 
     fn eval_binary(

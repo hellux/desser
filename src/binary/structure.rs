@@ -1,4 +1,4 @@
-use super::scope::{Name, NameArray, NameStruct};
+use super::scope::{NameArray, NameField, NameStruct};
 use super::*;
 use std::convert::{TryFrom, TryInto};
 
@@ -55,21 +55,20 @@ impl StructField {
     }
 }
 
-impl<'n> TryFrom<Name<'n>> for StructField {
+impl TryFrom<NameField> for StructField {
     type Error = ();
-    fn try_from(name: Name<'n>) -> Result<Self, Self::Error> {
-        match name {
-            Name::Struct(nst) => nst.try_into(),
-            Name::Array(narr) => narr.try_into(),
-            Name::Field(ptr) => Ok(StructField::Prim(ptr)),
-            _ => Err(()),
+    fn try_from(nf: NameField) -> Result<Self, Self::Error> {
+        match nf {
+            NameField::Prim(ptr) => Ok(StructField::Prim(ptr)),
+            NameField::Struct(nst) => nst.try_into(),
+            NameField::Array(narr) => narr.try_into(),
         }
     }
 }
 
-impl<'n> TryFrom<NameStruct<'n>> for StructField {
+impl TryFrom<NameStruct> for StructField {
     type Error = ();
-    fn try_from(nst: NameStruct<'n>) -> Result<Self, Self::Error> {
+    fn try_from(nst: NameStruct) -> Result<Self, Self::Error> {
         let mut fields: Vec<(Sym, StructField)> = nst
             .fields
             .into_iter()
@@ -95,9 +94,9 @@ impl<'n> TryFrom<NameStruct<'n>> for StructField {
     }
 }
 
-impl<'n> TryFrom<NameArray<'n>> for StructField {
+impl TryFrom<NameArray> for StructField {
     type Error = ();
-    fn try_from(narr: NameArray<'n>) -> Result<Self, Self::Error> {
+    fn try_from(narr: NameArray) -> Result<Self, Self::Error> {
         let elements = narr
             .elements
             .into_iter()

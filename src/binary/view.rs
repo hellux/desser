@@ -31,7 +31,8 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
     }
 
     fn format(&mut self, field: &StructField) -> io::Result<()> {
-        self.addr_len = format!("{:x}", BytePos::from(field.size()).size()).len();
+        self.addr_len =
+            format!("{:x}", BytePos::from(field.size()).size()).len();
         self.fmt_field(field, 0)
     }
 
