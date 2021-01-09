@@ -100,7 +100,7 @@ fn main() -> Result<(), std::io::Error> {
     let spec_res = desser::parse_spec(&opts.spec_file);
 
     let mut errors = Vec::new();
-    match spec_res {
+    let symtab = match spec_res {
         Ok((spec, mut symtab)) => {
             let mut binary_file = BufReader::new(opts.input_file);
             eprintln!("binary parsing..");
@@ -124,13 +124,14 @@ fn main() -> Result<(), std::io::Error> {
                     errors.push(e);
                 }
             };
+            Some(symtab)
         }
-        Err(mut es) => errors.append(&mut es),
+        Err(mut es) => { errors.append(&mut es); None },
     };
 
     if !errors.is_empty() {
         for e in errors {
-            e.display(&opts.spec_file);
+            e.display(&opts.spec_file, symtab.as_ref());
         }
         std::process::exit(1);
     }

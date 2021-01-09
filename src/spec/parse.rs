@@ -49,6 +49,7 @@ impl From<PError> for Error {
 
         Error {
             span: p.span,
+            backtrace: Vec::new(),
             desc,
             hint,
             ty: ErrorType::Parsing,

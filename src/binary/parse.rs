@@ -20,7 +20,7 @@ pub(super) fn parse<'s, R: BufRead + Seek>(
         Ok(r) => r,
         Err(kind) => {
             let e = SError {
-                span: fp.span,
+                backtrace: fp.traversed_fields,
                 pos: fp.pos,
                 kind,
             };
@@ -33,17 +33,17 @@ pub(super) fn parse<'s, R: BufRead + Seek>(
 
 struct FileParser<'s, R> {
     f: &'s mut R,
-    span: Span,
     pos: BitPos,
     length: BitSize,
     scope: Scope<'s>,
+    traversed_fields: Vec<(Span, Option<Sym>)>,
 }
 
 impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn new(f: &'s mut R, scope: Scope<'s>, length: BitSize) -> Self {
         FileParser {
             f,
-            span: Span(0, 0),
+            traversed_fields: Vec::new(),
             pos: BitPos::origin(),
             length,
             scope,
@@ -249,7 +249,6 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         }
 
         self.scope.enter_struct(self.pos, static_space);
-
         let success = self.parse_block(&spec.block);
         let nst = self.scope.exit_struct();
 
@@ -358,9 +357,12 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn parse_field(&mut self, field: &ast::Field) -> SResult<()> {
-        self.span = field.span;
+        self.traversed_fields.push((field.span, field.id));
 
         let name = self.parse_field_type(&field.ty)?;
+
+        self.traversed_fields.pop();
+
         if !field.hidden {
             self.scope.insert_field(field.id, name);
         }

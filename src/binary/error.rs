@@ -23,13 +23,13 @@ pub type SResult<T> = Result<T, SErrorKind>;
 
 #[derive(Debug)]
 pub struct SError {
-    pub span: Span,
+    pub backtrace: Vec<(Span, Option<Sym>)>,
     pub pos: BitPos,
     pub kind: SErrorKind,
 }
 
 impl Error {
-    pub fn from(s: SError, symtab: &SymbolTable) -> Self {
+    pub fn from(mut s: SError, symtab: &SymbolTable) -> Self {
         let desc = match s.kind {
             SErrorKind::IdentifierNotInScope(sym) => format!(
                 "identifier '{}' not in scope",
@@ -55,7 +55,12 @@ impl Error {
         let hint = None;
 
         Error {
-            span: s.span,
+            span: s.backtrace.pop().unwrap().0,
+            backtrace: s
+                .backtrace
+                .iter()
+                .map(|(sp, sy)| (sp.0, *sy))
+                .collect(),
             desc,
             hint,
             ty: ErrorType::Structure,

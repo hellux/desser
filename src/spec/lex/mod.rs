@@ -66,6 +66,7 @@ impl From<LError> for Error {
 
         Error {
             span: l.span,
+            backtrace: Vec::new(),
             desc,
             hint,
             ty: ErrorType::Lexical,

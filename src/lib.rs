@@ -41,13 +41,14 @@ pub enum PrimType<T> {
 #[derive(Debug)]
 pub struct Error {
     pub span: Span,
+    pub backtrace: Vec<(u32, Option<Sym>)>,
     pub desc: String,
     pub hint: Option<&'static str>,
     pub ty: ErrorType,
 }
 
 impl Error {
-    pub fn display(&self, sf: &SpecFile) {
+    pub fn display(&self, sf: &SpecFile, symtab: Option<&SymbolTable>) {
         let (l0, c0) = sf.line_col(self.span.0);
         let (l1, c1) = sf.line_col(self.span.1 - 1);
         let lineno = format!("{}", l0);
@@ -61,6 +62,25 @@ impl Error {
         let arrows = std::iter::repeat("^").take(arrc).collect::<String>();
 
         eprintln!("\x1b[1;31merror\x1b[0;1m: {}", self.desc);
+        if let Some(st) = symtab {
+            for (pos, id_opt) in &self.backtrace {
+                let (l, c) = sf.line_col(*pos);
+                let id_str = if let Some(id) = id_opt {
+                    st.name(*id).unwrap()
+                } else {
+                    ""
+                };
+                eprintln!(
+                    "{:s$}   \x1b[0m {}:{}:{} {}",
+                    "",
+                    sf.path,
+                    l,
+                    c,
+                    id_str,
+                    s = ind
+                );
+            }
+        }
         eprintln!(
             "{:s$}\x1b[1;34m-->\x1b[0m {}:{}:{}",
             "",
