@@ -62,14 +62,7 @@ pub fn parse_file_spec(
 ) -> (Result<ast::Struct, Error>, SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
-    let file_spec = parser.parse_inner_struct(tokens).map(
-        |(structs, constants, block)| ast::Struct {
-            formal_params: vec![],
-            structs,
-            constants,
-            block,
-        },
-    );
+    let file_spec = parser.parse_inner_struct(tokens);
     let (symtab, errors) = parser.consume();
 
     (
@@ -190,17 +183,9 @@ impl Parser {
         };
 
         if dn.delim == Brace {
-            let (structs, constants, block) =
-                self.parse_inner_struct(dn.stream)?;
-            Ok((
-                id,
-                ast::Struct {
-                    formal_params,
-                    structs,
-                    constants,
-                    block,
-                },
-            ))
+            let mut spec = self.parse_inner_struct(dn.stream)?;
+            spec.formal_params = formal_params;
+            Ok((id, spec))
         } else {
             Err(self.err_hint(
                 UnexpectedOpenDelim(dn.delim),
@@ -232,8 +217,7 @@ impl Parser {
     fn parse_inner_struct(
         &mut self,
         mut stream: TokenStream,
-    ) -> PResult<(Vec<(Sym, ast::Struct)>, Vec<(Sym, ast::Expr)>, ast::Block)>
-    {
+    ) -> PResult<ast::Struct> {
         let mut structs = Vec::new();
         let mut constants = Vec::new();
         while stream.not_empty() {
@@ -260,7 +244,12 @@ impl Parser {
 
         let block = self.parse_block(stream)?;
 
-        Ok((structs, constants, block))
+        Ok(ast::Struct {
+            formal_params: vec![],
+            structs,
+            constants,
+            block,
+        })
     }
 
     fn parse_block(&mut self, mut stream: TokenStream) -> PResult<ast::Block> {
