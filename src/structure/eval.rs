@@ -29,7 +29,7 @@ pub type FloatVal = f64;
 pub enum Val {
     Integer(IntVal),
     Float(FloatVal),
-    Compound(Vec<u8>, u64),
+    Compound(Vec<u8>, BitSize),
 }
 
 #[derive(Clone, Debug)]
@@ -95,9 +95,10 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             ExprKind::Literal(kind) => match kind {
                 LitKind::Int(i) => Val::Integer(*i),
                 LitKind::Char(i) => Val::Integer(*i as IntVal),
-                LitKind::Str(bytes) => {
-                    Val::Compound(bytes.clone(), (bytes.len() * 8) as u64)
-                }
+                LitKind::Str(bytes) => Val::Compound(
+                    bytes.clone(),
+                    ByteSize(bytes.len() as u64).into(),
+                ),
             },
             //ExprKind::Array(elems) => todo!(),
             ExprKind::Call(func, args) => self.eval_call(func, args)?,
@@ -157,7 +158,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         self.eval_partial(expr)?
             .name()?
             .start()
-            .map(|a| Val::Integer(a as IntVal / 8))
+            .map(|a| Val::Integer(BytePos::from(a).size() as IntVal))
             .ok_or(SErrorKind::InvalidType)
     }
 
@@ -165,7 +166,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         self.eval_partial(expr)?
             .name()?
             .size()
-            .map(|a| Val::Integer(a as IntVal / 8))
+            .map(|s| Val::Integer(ByteSize::from(s).size() as IntVal))
             .ok_or(SErrorKind::InvalidType)
     }
 
@@ -180,7 +181,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .name()?
             .size()
             .ok_or(SErrorKind::InvalidType)?;
-        Ok(Val::Integer((start + size) as IntVal / 8))
+        Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
     fn eval_len(&mut self, expr: &'a Expr) -> SResult<Val> {

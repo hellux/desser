@@ -1,3 +1,4 @@
+mod bits;
 mod error;
 mod eval;
 pub mod format;
@@ -10,6 +11,7 @@ use std::convert::TryInto;
 
 use crate::spec::ast;
 use crate::{Error, Order, Sym, SymbolTable};
+use bits::*;
 use std::io::{BufRead, Seek};
 pub use structure::*;
 pub use view::view_structure;
@@ -24,7 +26,7 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
 
 #[derive(Clone, Debug)]
 pub struct Ptr {
-    pub start: u64,
+    pub start: BitPos,
     pub pty: PrimType,
     pub byte_order: Order,
 }
@@ -48,16 +50,16 @@ pub enum PrimKind {
 }
 
 impl PrimType {
-    pub fn size(&self) -> u8 {
-        match self {
+    pub fn size(&self) -> BitSize {
+        BitSize::new(match self {
             //            PrimType::Signed(len) => *len,
             //            PrimType::Unsigned(len) => *len,
             //            PrimType::Float(exponent, mantissa) => 1 + exponent + mantissa,
-            PrimType::BitVec(len) => *len,
+            PrimType::BitVec(len) => *len as u64,
             PrimType::U8 | PrimType::I8 | PrimType::Char => 8,
             PrimType::U16 | PrimType::I16 => 16,
             PrimType::U32 | PrimType::I32 | PrimType::F32 => 32,
             PrimType::U64 | PrimType::I64 | PrimType::F64 => 64,
-        }
+        })
     }
 }

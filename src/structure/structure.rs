@@ -11,15 +11,15 @@ pub enum StructField {
 
 #[derive(Debug, Clone)]
 pub struct Array {
-    pub start: u64,
-    pub size: u64,
+    pub start: BitPos,
+    pub size: BitSize,
     pub elements: Vec<StructField>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub start: u64,
-    pub size: u64,
+    pub start: BitPos,
+    pub size: BitSize,
     pub fields: Vec<(Sym, StructField)>,
 }
 
@@ -38,7 +38,7 @@ impl StructField {
         }
     }
 
-    pub fn start(&self) -> u64 {
+    pub fn start(&self) -> BitPos {
         match self {
             StructField::Prim(ptr) => ptr.start,
             StructField::Array(arr) => arr.start,
@@ -46,9 +46,9 @@ impl StructField {
         }
     }
 
-    pub fn size(&self) -> u64 {
+    pub fn size(&self) -> BitSize {
         match self {
-            StructField::Prim(Ptr { pty, .. }) => pty.size() as u64,
+            StructField::Prim(Ptr { pty, .. }) => pty.size(),
             StructField::Array(arr) => arr.size,
             StructField::Struct(st) => st.size,
         }

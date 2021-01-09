@@ -24,15 +24,15 @@ pub enum Name<'n> {
 
 #[derive(Clone, Debug)]
 pub struct NameStruct<'n> {
-    pub start: u64,
-    pub size: u64,
+    pub start: BitPos,
+    pub size: BitSize,
     pub fields: Namespace<'n>,
 }
 
 #[derive(Clone, Debug)]
 pub struct NameArray<'n> {
-    pub start: u64,
-    pub size: u64,
+    pub start: BitPos,
+    pub size: BitSize,
     pub elements: IndexSpace<'n>,
 }
 
@@ -73,7 +73,7 @@ impl<'n> Name<'n> {
         }
     }
 
-    pub fn start(&self) -> Option<u64> {
+    pub fn start(&self) -> Option<BitPos> {
         match self {
             Name::Field(ptr) => Some(ptr.start),
             Name::Struct(nst) => Some(nst.start),
@@ -82,9 +82,9 @@ impl<'n> Name<'n> {
         }
     }
 
-    pub fn size(&self) -> Option<u64> {
+    pub fn size(&self) -> Option<BitSize> {
         match self {
-            Name::Field(ptr) => Some(ptr.pty.size() as u64),
+            Name::Field(ptr) => Some(ptr.pty.size()),
             Name::Struct(nst) => Some(nst.size),
             Name::Array(narr) => Some(narr.size),
             _ => None,
@@ -132,7 +132,7 @@ pub struct Scope<'n> {
 }
 
 impl<'n> Scope<'n> {
-    pub fn new(file_length: u64, st: &mut SymbolTable) -> Self {
+    pub fn new(file_length: BitSize, st: &mut SymbolTable) -> Self {
         let mut ns = Namespace::new();
         ns.insert(st.builtin(FuncLen), Name::Func(NameFunc::Len));
         ns.insert(st.builtin(FuncAddrOf), Name::Func(NameFunc::AddrOf));
@@ -143,7 +143,7 @@ impl<'n> Scope<'n> {
             static_scope: ns,
             local_scopes: vec![Namespace::new()],
             blocks: vec![Name::Struct(NameStruct {
-                start: 0,
+                start: BitPos::new(0),
                 size: file_length,
                 fields: Namespace::new(),
             })],
@@ -234,18 +234,18 @@ impl<'n> Scope<'n> {
         } else {
             let end = start + size;
             let curr_end = curr.start + curr.size;
-            curr.start = u64::min(start, curr.start);
-            let next_end = u64::max(end, curr_end);
+            curr.start = BitPos::min(start, curr.start);
+            let next_end = BitPos::max(end, curr_end);
             curr.size = next_end - curr.start;
         }
 
         curr.fields.insert(sym, name);
     }
 
-    pub fn enter_struct(&mut self, base: u64, static_scope: Namespace<'n>) {
+    pub fn enter_struct(&mut self, base: BitPos, static_scope: Namespace<'n>) {
         let blocks = vec![Name::Struct(NameStruct {
             start: base,
-            size: 0,
+            size: BitSize::new(0),
             fields: Namespace::new(),
         })];
         let mut local = Namespace::new();
@@ -267,11 +267,11 @@ impl<'n> Scope<'n> {
         self.structs.pop().unwrap().blocks.pop().unwrap().into_st()
     }
 
-    pub fn enter_subblock(&mut self, base: u64) {
+    pub fn enter_subblock(&mut self, base: BitPos) {
         self.structs.last_mut().unwrap().blocks.push(Name::Struct(
             NameStruct {
                 start: base,
-                size: 0,
+                size: BitSize::new(0),
                 fields: Namespace::new(),
             },
         ));

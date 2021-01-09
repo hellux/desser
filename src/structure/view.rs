@@ -1,5 +1,5 @@
 use std::io;
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, Write};
 
 use super::*;
 
@@ -31,12 +31,12 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
     }
 
     fn format(&mut self, field: &StructField) -> io::Result<()> {
-        self.addr_len = format!("{:x}", field.size()).len();
+        self.addr_len = format!("{:x}", BytePos::from(field.size()).size()).len();
         self.fmt_field(field, 0)
     }
 
     fn prepend_addr(&mut self, kind: &StructField) -> io::Result<()> {
-        let bit = kind.start() % 8;
+        let bit = kind.start().bit_index();
         let bit_str = if bit > 0 {
             format!(":{}", bit)
         } else {
@@ -47,18 +47,26 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             write!(
                 self.out,
                 "{:0>l$x}{}    ",
-                kind.start() / 8,
+                BytePos::from(kind.start()).size(),
                 bit_str,
                 l = self.addr_len
             )
         } else {
             write!(self.out, "{:l$}", "", l = self.addr_len + 6)
         }
+
+        /*
+        if kind.is_leaf() {
+            write!(self.out, "{:0>l$}{}    ", kind.start(), l = self.addr_len)
+        } else {
+            write!(self.out, "{:l$}", "", l = self.addr_len + 6)
+        }
+        */
     }
 
     fn fmt_struct(&mut self, st: &Struct, level: usize) -> io::Result<()> {
         if level > 1 {
-            write!(self.out, "0x{:x} ", st.size / 8)?;
+            write!(self.out, "0x{:} ", st.size)?;
             self.out.write_all(b"{\n")?;
         }
         for (id, f) in &st.fields {
@@ -84,7 +92,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
         let w = format!("{}", arr.elements.len()).len();
 
         if level > 1 {
-            write!(self.out, "0x{:x} ", arr.size / 8)?;
+            write!(self.out, "{} ", arr.elements.len())?;
         }
 
         if !arr.elements.is_empty() {
@@ -104,7 +112,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                 for (i, f) in arr.elements.iter().enumerate() {
                     self.prepend_addr(f)?;
                     self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
-                    write!(self.out, "{:>w$}: ", i, w = w,)?;
+                    write!(self.out, "{:0>w$}: ", i, w = w,)?;
                     self.fmt_field(f, level)?;
                     self.out.write_all(b",\n")?;
                 }
@@ -131,7 +139,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             StructField::Prim(ptr) => {
                 let data = format::read_bytes(
                     ptr.start,
-                    ptr.pty.size() as u64,
+                    ptr.pty.size(),
                     ptr.byte_order,
                     &mut self.f,
                 );

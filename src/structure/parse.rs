@@ -11,7 +11,7 @@ pub fn parse<'s, R: BufRead + Seek>(
     root_spec: &'s ast::Struct,
     symtab: &mut SymbolTable,
 ) -> Result<Name<'s>, Error> {
-    let length = f.seek(SeekFrom::End(0)).unwrap() * 8;
+    let length = ByteSize(f.seek(SeekFrom::End(0)).unwrap()).into();
     let scope = Scope::new(length, symtab);
     let mut fp = FileParser::new(f, scope, length);
     let root_name = match fp.parse_struct(root_spec, &[]) {
@@ -32,23 +32,23 @@ pub fn parse<'s, R: BufRead + Seek>(
 struct FileParser<'s, R> {
     f: &'s mut R,
     span: Span,
-    pos: u64,
-    length: u64,
+    pos: BitPos,
+    length: BitSize,
     scope: Scope<'s>,
 }
 
 impl<'s, R: BufRead + Seek> FileParser<'s, R> {
-    fn new(f: &'s mut R, scope: Scope<'s>, length: u64) -> Self {
+    fn new(f: &'s mut R, scope: Scope<'s>, length: BitSize) -> Self {
         FileParser {
             f,
             span: Span(0, 0),
-            pos: 0,
+            pos: BitPos::origin(),
             length,
             scope,
         }
     }
 
-    fn seek(&mut self, pos: u64) -> SResult<()> {
+    fn seek(&mut self, pos: BitPos) -> SResult<()> {
         self.pos = pos;
         if self.pos <= self.length {
             Ok(())
@@ -62,13 +62,17 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         match &loc.expr {
             Some(expr) => {
                 let base = match loc.base {
-                    AddrBase::Absolute => 0,
+                    AddrBase::Absolute => BitPos::new(0),
                     AddrBase::Relative => self.pos,
-                    AddrBase::Local => 0, // FIXME
+                    AddrBase::Local => BitPos::new(0), // FIXME
                 };
 
-                let offset = self.eval_size(expr)? as u64
-                    * if loc.bitwise { 1 } else { 8 };
+                let val = self.eval_size(expr)? as u64;
+                let offset = if loc.bitwise {
+                    BitSize::new(val)
+                } else {
+                    ByteSize(val).into()
+                };
                 self.seek(base + offset)?;
             }
             None => {}
@@ -80,12 +84,14 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn align(&mut self, alignment: &ast::Alignment) -> SResult<()> {
         match &alignment.expr {
             Some(expr) => {
-                let al = self.eval_size(expr)?;
+                let al = self.eval_size(expr)? as u64;
                 if al > 0 {
-                    let al = al as u64 * if alignment.bitwise { 1 } else { 8 };
-                    if self.pos % al > 0 {
-                        self.pos += al - self.pos % al
-                    }
+                    let al = if alignment.bitwise {
+                        BitSize::new(al)
+                    } else {
+                        ByteSize(al).into()
+                    };
+                    self.pos = self.pos.align(al);
                 } else {
                     return Err(SErrorKind::InvalidValue(al as u64));
                 }
@@ -327,7 +333,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     pty: spty,
                     byte_order: ty.byte_order,
                 };
-                self.seek(ptr.start + ptr.pty.size() as u64)?;
+                self.seek(ptr.start + ptr.pty.size())?;
                 Name::Field(ptr)
             }
         };

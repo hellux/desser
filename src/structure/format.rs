@@ -2,32 +2,31 @@ use std::convert::TryInto;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 
+use super::bits::*;
 use super::eval::{FloatVal, IntVal, Val};
 use super::{Order, PrimType, Ptr};
 
 impl Ptr {
     pub fn eval<R: Read + Seek>(&self, f: &mut R) -> Val {
         let bytes =
-            read_bytes(self.start, self.pty.size() as u64, self.byte_order, f);
+            read_bytes(self.start, self.pty.size(), self.byte_order, f);
         self.pty.eval(bytes.as_slice())
     }
 }
 
 pub fn read_bytes<R: Read + Seek>(
-    start: u64,
-    size: u64,
+    start: BitPos,
+    size: BitSize,
     byte_order: Order,
     f: &mut R,
 ) -> Vec<u8> {
-    let start_byte = start / 8;
-    f.seek(SeekFrom::Start(start_byte)).unwrap();
+    let start_byte: BytePos = start.into();
+    f.seek(SeekFrom::Start(start_byte.0)).unwrap();
 
-    let size = size as u64;
     let end = start + size;
-    let end_offset = end % 8;
-    let end_byte = end / 8 + if end_offset > 0 { 1 } else { 0 };
-    let size_bytes = (end_byte - start_byte) as usize;
-    let mut buf = vec![0; size_bytes];
+    let end_byte: BytePos = end.into();
+    let size_bytes = end_byte - start_byte;
+    let mut buf = vec![0; size_bytes.size()];
     f.read_exact(buf.as_mut_slice()).unwrap();
 
     // use little endian internally
@@ -36,15 +35,14 @@ pub fn read_bytes<R: Read + Seek>(
     }
 
     // shift value bits to rightmost side, e.g "[?xxx|xx??]" -> "[???x|xxxx]"
-    if end_offset == 0 {
+    if end.byte_aligned() {
         buf
     } else {
-        let size_aligned =
-            (size / 8 + if size % 8 > 0 { 1 } else { 0 }) as usize;
-        let buf_aligned = le_shr(&buf, 8 - end_offset as usize);
+        let size_aligned: ByteSize = size.into();
+        let buf_aligned = le_shr(&buf, 8 - end.bit_index() as usize);
         buf_aligned
             .into_iter()
-            .skip(size_bytes - size_aligned)
+            .skip(size_bytes.size() - size_aligned.size())
             .collect()
     }
 }
