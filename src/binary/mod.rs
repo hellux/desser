@@ -33,22 +33,6 @@ pub struct Ptr {
 
 type PrimType = crate::PrimType<u8>;
 
-#[derive(Copy, Clone, Debug)]
-pub enum PrimKind {
-    BitVec,
-    Char,
-    U8,
-    I8,
-    U16,
-    I16,
-    U32,
-    I32,
-    U64,
-    I64,
-    F32,
-    F64,
-}
-
 impl PrimType {
     pub fn size(&self) -> BitSize {
         BitSize::new(match self {

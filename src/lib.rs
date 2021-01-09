@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
+mod binary;
 mod spec;
-mod structure;
 
+pub use binary::{parse_structure, view_structure};
 pub use spec::{parse_spec, Span, SpecFile};
-pub use structure::*;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Order {
