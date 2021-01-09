@@ -101,6 +101,7 @@ pub type Sym = u16;
 
 enum BuiltIn {
     IdentSelf,
+    IdentSuper,
     FuncLen,
     FuncAddrOf,
     FuncSizeOf,
@@ -111,6 +112,7 @@ impl BuiltIn {
     fn name(&self) -> &str {
         match self {
             Self::IdentSelf => "self",
+            Self::IdentSuper => "super",
             Self::FuncLen => "len",
             Self::FuncAddrOf => "addrof",
             Self::FuncSizeOf => "sizeof",
@@ -133,6 +135,7 @@ impl SymbolTable {
         };
 
         tbl.insert(BuiltIn::IdentSelf.name());
+        tbl.insert(BuiltIn::IdentSuper.name());
         tbl.insert(BuiltIn::FuncLen.name());
         tbl.insert(BuiltIn::FuncAddrOf.name());
         tbl.insert(BuiltIn::FuncSizeOf.name());

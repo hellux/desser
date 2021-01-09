@@ -32,6 +32,7 @@ pub enum Val {
     Compound(Vec<u8>, u64),
 }
 
+#[derive(Clone, Debug)]
 pub enum Partial<'a> {
     Value(Val),
     Name(&'a Name<'a>),

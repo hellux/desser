@@ -1,5 +1,5 @@
 use std::io;
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 use super::*;
 

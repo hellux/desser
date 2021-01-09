@@ -118,6 +118,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
     fn eval_partial(&mut self, expr: &ast::Expr) -> SResult<Partial<'s>> {
         let part = eval::eval_partial(expr, self.f, &self.scope)?;
+        // name is never removed and namespace outlives 's
+        // FIXME: variable can actually be overwritten and thus removed
         Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
     }
 
