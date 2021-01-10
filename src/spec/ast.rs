@@ -61,10 +61,15 @@ pub struct FieldType {
     //pub bit_order: Order,
     pub loc: Location,
     pub alignment: Alignment,
-    pub constraint: Option<Expr>,
+    pub constraints: Vec<Constraint>,
 }
 
-pub type PrimType = crate::PrimType<Expr>;
+#[derive(Clone, Debug)]
+pub enum Constraint {
+    Generic(Expr),
+    Binary(BinOp, Expr),
+    Zero(bool),
+}
 
 #[derive(Clone, Debug)]
 pub enum FieldKind {
@@ -73,6 +78,8 @@ pub enum FieldKind {
     Struct(Sym, Vec<Expr>),
     Block(Block),
 }
+
+pub type PrimType = crate::PrimType<Expr>;
 
 #[derive(Clone, Debug)]
 pub enum Array {

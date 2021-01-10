@@ -18,7 +18,9 @@ mod tree;
 use crate::{Error, ErrorType};
 
 use super::Span;
-pub use cook::{Attr, Delim, Keyword, Lit, LitKind, TokKind, Token};
+pub use cook::{
+    Attr, BinConstr, Delim, Keyword, Lit, LitKind, TokKind, Token,
+};
 pub use tree::{parse_token_trees, DelimNode, TokTree, TokenStream};
 
 use self::LErrorKind::*;

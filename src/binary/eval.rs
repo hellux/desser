@@ -208,7 +208,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         ))
     }
 
-    fn eval_binary(
+    pub fn eval_binary(
         &mut self,
         op: BinOp,
         lhs: &'a Expr,

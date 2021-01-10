@@ -7,7 +7,8 @@ syn keyword dsrConditional if else
 syn keyword dsrLoop for in
 syn keyword dsrLet let const
 syn keyword dsrDef def nextgroup=dsrStruct skipwhite
-syn keyword dsrAttr addr offset skip align baddr boffset bskip balign order constraint
+syn keyword dsrAttr addr offset skip align baddr boffset bskip balign order
+syn keyword dsrConstraint constraint eq neq lt gt leq geq zero nonzero
 syn match dsrStruct "\h\w*" display contained
 
 syn keyword dsrPrim char bitvec u8 u16 u32 u64 i8 i16 i32 i64 f32 f64
@@ -45,6 +46,7 @@ hi def link dsrStmt Keyword
 hi def link dsrConditional Keyword
 hi def link dsrLoop Keyword
 hi def link dsrAttr Keyword
+hi def link dsrConstraint Keyword
 hi def link dsrDef Keyword
 hi def link dsrStruct Identifier
 hi def link dsrPrim Type

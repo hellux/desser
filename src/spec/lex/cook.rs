@@ -97,6 +97,18 @@ pub enum Attr {
     Location { base: AddrBase, bitwise: bool },
     Order,
     Constraint,
+    BinConstr(BinConstr),
+    Zero(bool),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum BinConstr {
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Leq,
+    Geq,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -306,8 +318,16 @@ impl<'a> TokenCooker<'a> {
             "debug" => Keyword(Keyword::Debug),
             "constrain" => Keyword(Keyword::Constrain),
 
-            "constraint" => Attr(Attr::Constraint),
             "order" => Attr(Attr::Order),
+            "constraint" => Attr(Attr::Constraint),
+            "zero" => Attr(Attr::Zero(true)),
+            "nonzero" => Attr(Attr::Zero(false)),
+            "eq" => Attr(Attr::BinConstr(BinConstr::Eq)),
+            "neq" => Attr(Attr::BinConstr(BinConstr::Neq)),
+            "lt" => Attr(Attr::BinConstr(BinConstr::Lt)),
+            "gt" => Attr(Attr::BinConstr(BinConstr::Gt)),
+            "leq" => Attr(Attr::BinConstr(BinConstr::Leq)),
+            "geq" => Attr(Attr::BinConstr(BinConstr::Geq)),
 
             "align" => Attr(Attr::Align(false)),
             "addr" => Attr(Attr::Location {

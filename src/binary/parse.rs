@@ -6,7 +6,7 @@ use super::scope::{
     IndexSpace, Name, NameArray, NameField, NameStruct, Namespace, Scope,
 };
 use super::*;
-use crate::{AddrBase, Error, Span, SymbolTable};
+use crate::{AddrBase, BuiltIn, Error, Span, SymbolTable};
 
 pub(super) fn parse<'s, R: BufRead + Seek>(
     f: &'s mut R,
@@ -15,7 +15,8 @@ pub(super) fn parse<'s, R: BufRead + Seek>(
 ) -> Result<NameStruct, Error> {
     let length = ByteSize(f.seek(SeekFrom::End(0)).unwrap()).into();
     let scope = Scope::new(length, symtab);
-    let mut fp = FileParser::new(f, scope, length);
+    let mut fp =
+        FileParser::new(f, scope, length, symtab.builtin(BuiltIn::IdentSelf));
     let root_nst = match fp.parse_struct(root_spec, &[]) {
         Ok(r) => r,
         Err(kind) => {
@@ -37,16 +38,23 @@ struct FileParser<'s, R> {
     length: BitSize,
     scope: Scope<'s>,
     traversed_fields: Vec<(Span, Option<Sym>)>,
+    self_sym: Sym,
 }
 
 impl<'s, R: BufRead + Seek> FileParser<'s, R> {
-    fn new(f: &'s mut R, scope: Scope<'s>, length: BitSize) -> Self {
+    fn new(
+        f: &'s mut R,
+        scope: Scope<'s>,
+        length: BitSize,
+        self_sym: Sym,
+    ) -> Self {
         FileParser {
             f,
             traversed_fields: Vec::new(),
             pos: BitPos::origin(),
             length,
             scope,
+            self_sym,
         }
     }
 
@@ -116,11 +124,18 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         }
     }
 
-    fn eval_bool(&mut self, expr: &ast::Expr) -> SResult<bool> {
+    fn eval_nonzero(&mut self, expr: &ast::Expr) -> SResult<bool> {
         match self.eval(expr)? {
-            Val::Integer(0) => Ok(false),
-            Val::Integer(_nz) => Ok(true),
-            _ => Err(SErrorKind::InvalidType),
+            Val::Integer(i) => Ok(i != 0),
+            Val::Float(f) => Ok(f != 0.0),
+            Val::Compound(data, _) => {
+                for d in data {
+                    if d != 0 {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
         }
     }
 
@@ -266,13 +281,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     self.scope.insert_local(*sym, part);
                 }
                 ast::Stmt::If(if_stmt) => {
-                    let body = if self.eval_bool(&if_stmt.cond)? {
+                    let body = if self.eval_nonzero(&if_stmt.cond)? {
                         &if_stmt.if_body
                     } else {
                         let mut i = 0;
                         loop {
                             if let Some((c, b)) = if_stmt.elseifs.get(i) {
-                                if self.eval_bool(c)? {
+                                if self.eval_nonzero(c)? {
                                     break b;
                                 } else {
                                     i += 1;
@@ -287,7 +302,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 }
                 ast::Stmt::Constrain(exprs) => {
                     for expr in exprs {
-                        if !self.eval_bool(expr)? {
+                        if !self.eval_nonzero(expr)? {
                             return Err(SErrorKind::FailedConstraint);
                         }
                     }
@@ -341,11 +356,31 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             }
         };
 
-        if let Some(constraint) = &ty.constraint {
+        for constraint in &ty.constraints {
             self.scope.enter_selfscope(unsafe {
                 std::mem::transmute::<&NameField, &'s NameField>(&nf)
             });
-            let res = self.eval_bool(constraint);
+            let self_var = ast::Expr {
+                kind: ast::ExprKind::Variable(self.self_sym),
+                span: Span(0, 0),
+            };
+            let res = match constraint {
+                ast::Constraint::Generic(constr) => self.eval_nonzero(constr),
+                ast::Constraint::Binary(op, expr) => {
+                    let cmp = ast::Expr {
+                        kind: ast::ExprKind::Binary(
+                            *op,
+                            Box::new(self_var),
+                            Box::new(expr.clone()),
+                        ),
+                        span: expr.span,
+                    };
+                    self.eval_nonzero(&cmp)
+                }
+                ast::Constraint::Zero(z) => {
+                    self.eval_nonzero(&self_var).map(|r| r ^ z)
+                }
+            };
             self.scope.exit_selfscope();
 
             if !res? {

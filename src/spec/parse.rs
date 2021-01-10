@@ -3,8 +3,8 @@ use crate::{AddrBase, BuiltIn, Error, ErrorType, Order, Sym, SymbolTable};
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
 use super::lex::{
-    Attr, Delim, DelimNode, Keyword, LitKind, TokKind, TokTree, Token,
-    TokenStream,
+    Attr, BinConstr, Delim, DelimNode, Keyword, LitKind, TokKind, TokTree,
+    Token, TokenStream,
 };
 use super::Span;
 
@@ -468,16 +468,17 @@ impl Parser {
         {
             let attr = *attr;
             self.eat(stream)?; // attr name
-            self.eat(stream)?; // arguments
-            let dn = self.expect_delim()?;
-            if dn.delim == Paren {
-                attributes.push((attr, dn.stream.split_on(&TokKind::Comma)));
+            let argstream = if let Some(TokTree::Delim(DelimNode {
+                delim: Paren,
+                ..
+            })) = stream.peek()
+            {
+                self.eat(stream)?; // arguments
+                self.expect_delim()?.stream.split_on(&TokKind::Comma)
             } else {
-                return Err(self.err_hint(
-                    Unexpected,
-                    "expected parenthesis with attribute arguments",
-                ));
-            }
+                vec![]
+            };
+            attributes.push((attr, argstream));
         }
 
         Ok(attributes)
@@ -497,7 +498,7 @@ impl Parser {
             base: AddrBase::Absolute,
             bitwise: false,
         };
-        let mut constraint = None;
+        let mut constraints = Vec::new();
         let attrs = self.parse_attrs(stream)?;
         for (attr, mut args) in attrs {
             match attr {
@@ -515,9 +516,6 @@ impl Parser {
                         bitwise,
                     };
                 }
-                Attr::Constraint => {
-                    constraint = Some(self.parse_expr(args.remove(0))?);
-                }
                 Attr::Order => {
                     let mut arg0 = args.remove(0);
                     self.eat(&mut arg0)?;
@@ -532,6 +530,28 @@ impl Parser {
                             )
                         }
                     }
+                }
+                Attr::Constraint => {
+                    constraints.push(ast::Constraint::Generic(
+                        self.parse_expr(args.remove(0))?,
+                    ));
+                }
+                Attr::Zero(z) => {
+                    constraints.push(ast::Constraint::Zero(z));
+                }
+                Attr::BinConstr(rel) => {
+                    let binop = match rel {
+                        BinConstr::Eq => ast::BinOp::Eq,
+                        BinConstr::Neq => ast::BinOp::Neq,
+                        BinConstr::Lt => ast::BinOp::Lt,
+                        BinConstr::Gt => ast::BinOp::Gt,
+                        BinConstr::Leq => ast::BinOp::Leq,
+                        BinConstr::Geq => ast::BinOp::Geq,
+                    };
+                    constraints.push(ast::Constraint::Binary(
+                        binop,
+                        self.parse_expr(args.remove(0))?,
+                    ));
                 }
             }
 
@@ -597,7 +617,7 @@ impl Parser {
             byte_order,
             loc,
             alignment,
-            constraint,
+            constraints,
         })
     }
 
