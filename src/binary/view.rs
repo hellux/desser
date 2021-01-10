@@ -3,14 +3,15 @@ use std::io::{Read, Seek, Write};
 
 use super::*;
 
-pub fn view_structure<R: Read + Seek>(
+pub fn view_structure<R: Read + Seek, W: Write>(
     f: &mut R,
+    output: &mut W,
     field: &StructField,
     symtab: &SymbolTable,
-) -> io::Result<String> {
-    let mut s = Vec::new();
-    Viewer::new(f, &mut s, symtab).format(field)?;
-    Ok(String::from_utf8_lossy(&s).to_string())
+) -> io::Result<()> {
+    let mut bufwr = std::io::BufWriter::new(output);
+    Viewer::new(f, &mut bufwr, symtab).format(field)?;
+    Ok(())
 }
 
 struct Viewer<'a, R: Read + Seek, W: Write> {

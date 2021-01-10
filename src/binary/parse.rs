@@ -315,18 +315,16 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                         match self.eval_partial(expr)? {
                             Partial::Name(name) => match name {
                                 Name::Field(nf) => {
-                                    if let Some(sf) =
-                                        StructField::try_from(nf.clone()).ok()
+                                    if let Ok(sf) =
+                                        StructField::try_from(nf.clone())
                                     {
-                                        eprintln!(
-                                            "{}",
-                                            view::view_structure(
-                                                self.f,
-                                                &sf,
-                                                self.symtab,
-                                            )
-                                            .unwrap()
-                                        );
+                                        view::view_structure(
+                                            self.f,
+                                            &mut std::io::stderr(),
+                                            &sf,
+                                            self.symtab,
+                                        )
+                                        .ok();
                                     } else {
                                         eprintln!("{{}}");
                                     }

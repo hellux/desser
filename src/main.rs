@@ -109,14 +109,12 @@ fn main() -> Result<(), std::io::Error> {
                 Ok(Some(root)) => {
                     if opts.view {
                         eprintln!("viewing..");
-                        println!(
-                            "{}",
-                            view_structure(
-                                &mut binary_file.into_inner(),
-                                &root,
-                                &symtab
-                            )?
-                        );
+                        view_structure(
+                            &mut binary_file.into_inner(),
+                            &mut std::io::stdout(),
+                            &root,
+                            &symtab
+                        ).ok();
                     }
                 }
                 Ok(None) => eprintln!("empty structure"),
