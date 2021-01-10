@@ -88,6 +88,10 @@ impl ops::Sub<BytePos> for BytePos {
 }
 
 impl ByteSize {
+    pub fn from_unaligned(pos: BitCount, size: BitCount) -> Self {
+        Self::from(BitCount(pos.bit_index() + size.0))
+    }
+
     pub fn size(self) -> usize {
         self.0 as usize
     }

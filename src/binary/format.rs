@@ -24,8 +24,7 @@ pub fn read_bytes<R: Read + Seek>(
     f.seek(SeekFrom::Start(start_byte.0)).unwrap();
 
     let end = start + size;
-    let end_byte: BytePos = end.into();
-    let size_bytes = end_byte - start_byte;
+    let size_bytes = ByteSize::from_unaligned(start, size);
     let mut buf = vec![0; size_bytes.size()];
     f.read_exact(buf.as_mut_slice()).unwrap();
 
@@ -151,14 +150,18 @@ mod test_format {
     const BE: Order = Order::BigEndian;
     const LE: Order = Order::LittleEndian;
 
+    fn test_read<R: Read + Seek>(start: u64, size: u64, order: Order, f: &mut R) -> Vec<u8> {
+        read_bytes(BitPos::new(start), BitSize::new(size), order, f)
+    }
+
     #[test]
     fn read_data() {
         let mut d1c = Cursor::new(D1);
-        assert_eq!(read_bytes(8, 16, BE, &mut d1c), &[0x07, 0x03]);
-        assert_eq!(read_bytes(2 * 8, 9, BE, &mut d1c), &[0x0f, 0x00]);
-        assert_eq!(read_bytes(8 + 4, 4, BE, &mut d1c), &[0x03]);
-        assert_eq!(read_bytes(2 * 8 + 4, 12, BE, &mut d1c), &[0xf0, 0x07]);
-        assert_eq!(read_bytes(0, 16, LE, &mut d1c), &[0xff, 0x03]);
+        assert_eq!(test_read(8, 16, BE, &mut d1c), &[0x07, 0x03]);
+        assert_eq!(test_read(2 * 8, 9, BE, &mut d1c), &[0x0f, 0x00]);
+        assert_eq!(test_read(8 + 4, 4, BE, &mut d1c), &[0x03]);
+        assert_eq!(test_read(2 * 8 + 4, 12, BE, &mut d1c), &[0xf0, 0x07]);
+        assert_eq!(test_read(0, 16, LE, &mut d1c), &[0xff, 0x03]);
     }
 
     #[test]
@@ -175,7 +178,7 @@ mod test_format {
 
     #[test]
     fn eval() {
-        assert_eq!(PrimType::Unsigned(32).eval_size(D1), 0xf00703ff);
-        assert_eq!(PrimType::Signed(32).eval_size(D1), -267975681);
+        assert_eq!(PrimType::U32.eval(D1), Val::Integer(0xf00703ff));
+        assert_eq!(PrimType::I32.eval(D1), Val::Integer(-267975681));
     }
 }

@@ -25,7 +25,7 @@ pub(super) fn eval_partial<'a, R: Read + Seek>(
 pub type IntVal = i64;
 pub type FloatVal = f64;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Val {
     Integer(IntVal),
     Float(FloatVal),
@@ -174,12 +174,21 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn eval_sizeof(&mut self, expr: &'a Expr) -> SResult<Val> {
-        self.eval_partial(expr)?
+        let start = self
+            .eval_partial(expr)?
+            .name()?
+            .field()?
+            .start()
+            .ok_or(SErrorKind::InvalidType)?;
+        let size = self
+            .eval_partial(expr)?
             .name()?
             .field()?
             .size()
-            .map(|s| Val::Integer(ByteSize::from(s).size() as IntVal))
-            .ok_or(SErrorKind::InvalidType)
+            .ok_or(SErrorKind::InvalidType)?;
+        Ok(Val::Integer(
+            ByteSize::from_unaligned(start, size).size() as IntVal
+        ))
     }
 
     fn eval_endof(&mut self, expr: &'a Expr) -> SResult<Val> {
