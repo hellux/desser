@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::io::{BufRead, Seek, SeekFrom};
 
 use super::error::{SError, SErrorKind, SResult};
@@ -15,8 +16,7 @@ pub(super) fn parse<'s, R: BufRead + Seek>(
 ) -> Result<NameStruct, Error> {
     let length = ByteSize(f.seek(SeekFrom::End(0)).unwrap()).into();
     let scope = Scope::new(length, symtab);
-    let mut fp =
-        FileParser::new(f, scope, length, symtab.builtin(BuiltIn::IdentSelf));
+    let mut fp = FileParser::new(f, scope, length, symtab);
     let root_nst = match fp.parse_struct(root_spec, &[]) {
         Ok(r) => r,
         Err(kind) => {
@@ -38,6 +38,7 @@ struct FileParser<'s, R> {
     length: BitSize,
     scope: Scope<'s>,
     traversed_fields: Vec<(Span, Option<Sym>)>,
+    symtab: &'s SymbolTable,
     self_sym: Sym,
 }
 
@@ -46,14 +47,16 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         f: &'s mut R,
         scope: Scope<'s>,
         length: BitSize,
-        self_sym: Sym,
+        symtab: &'s SymbolTable,
     ) -> Self {
+        let self_sym = symtab.builtin(BuiltIn::IdentSelf);
         FileParser {
             f,
             traversed_fields: Vec::new(),
             pos: BitPos::origin(),
             length,
             scope,
+            symtab,
             self_sym,
         }
     }
@@ -308,9 +311,36 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     }
                 }
                 ast::Stmt::Debug(exprs) => {
-                    eprint!("debug: ");
                     for expr in exprs {
-                        eprint!("{:?} ", self.eval(expr)?);
+                        match self.eval_partial(expr)? {
+                            Partial::Name(name) => match name {
+                                Name::Field(nf) => {
+                                    if let Some(sf) =
+                                        StructField::try_from(nf.clone()).ok()
+                                    {
+                                        eprintln!(
+                                            "{}",
+                                            view::view_structure(
+                                                self.f,
+                                                &sf,
+                                                self.symtab,
+                                            )
+                                            .unwrap()
+                                        );
+                                    } else {
+                                        eprintln!("{{}}");
+                                    }
+                                }
+                                Name::Spec(_) => {
+                                    eprintln!("<struct specification>")
+                                }
+                                Name::Func(nfunc) => {
+                                    eprintln!("<function {:?}>", nfunc)
+                                }
+                                Name::Value(_) => unreachable!(),
+                            },
+                            Partial::Value(val) => eprintln!("{:?} ", val),
+                        }
                     }
                     eprintln!();
                 }

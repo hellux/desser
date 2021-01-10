@@ -150,7 +150,12 @@ mod test_format {
     const BE: Order = Order::BigEndian;
     const LE: Order = Order::LittleEndian;
 
-    fn test_read<R: Read + Seek>(start: u64, size: u64, order: Order, f: &mut R) -> Vec<u8> {
+    fn test_read<R: Read + Seek>(
+        start: u64,
+        size: u64,
+        order: Order,
+        f: &mut R,
+    ) -> Vec<u8> {
         read_bytes(BitPos::new(start), BitSize::new(size), order, f)
     }
 
