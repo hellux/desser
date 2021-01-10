@@ -129,33 +129,33 @@ fn cook_integers() {
 fn cook_structs() {
     check_cooking(
         r#"
-    def psf2_header {
-        [u8; 4] magic ~ "head",
-        u32 version ~ <= 0,
-        until headersize ignore,
+    def header {
+        eq("head") [u8; 4] magic,
+        constraint(. <= 0) u32 version,
     }"#,
         "
         Keyword(Def)
-        Ident(0)
+        Ident(6)
         OpenDelim(Brace)
+        Attr(BinConstr(Eq))
+        OpenDelim(Paren)
+        Literal(Str([104, 101, 97, 100]))
+        CloseDelim(Paren)
         OpenDelim(Bracket)
-        Ident(1)
+        Ident(7)
         SemiColon
         Literal(Int(4))
         CloseDelim(Bracket)
-        Ident(2)
-        Tilde
-        Literal(Str([104,101,97,100]))
+        Ident(8)
         Comma
-        Ident(3)
-        Ident(4)
-        Tilde
+        Attr(Constraint)
+        OpenDelim(Paren)
+        Dot
         Leq
         Literal(Int(0))
-        Comma
-        Ident(5)
-        Ident(6)
-        Ident(7)
+        CloseDelim(Paren)
+        Ident(9)
+        Ident(10)
         Comma
         CloseDelim(Brace)
         Eof",
