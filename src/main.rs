@@ -95,7 +95,7 @@ fn parse_options() -> Options {
     }
 }
 
-fn main() -> Result<(), std::io::Error> {
+fn main() {
     let opts = parse_options();
     let spec_res = desser::parse_spec(&opts.spec_file);
 
@@ -133,6 +133,4 @@ fn main() -> Result<(), std::io::Error> {
         }
         std::process::exit(1);
     }
-
-    Ok(())
 }

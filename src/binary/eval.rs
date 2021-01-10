@@ -228,94 +228,21 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
 
         match (&left, &right) {
             (Val::Integer(l), Val::Integer(r)) => {
-                Ok(Val::Integer(self.eval_binary_int(op, *l, *r)))
+                Ok(Val::Integer(eval_binary_int(op, *l, *r)))
             }
             (Val::Float(l), Val::Integer(_)) => {
-                self.eval_binary_float(op, *l, right.float().unwrap())
+                eval_binary_float(op, *l, right.float().unwrap())
             }
             (Val::Integer(_), Val::Float(r)) => {
-                self.eval_binary_float(op, left.float().unwrap(), *r)
+                eval_binary_float(op, left.float().unwrap(), *r)
             }
-            (Val::Float(l), Val::Float(r)) => {
-                self.eval_binary_float(op, *l, *r)
-            }
+            (Val::Float(l), Val::Float(r)) => eval_binary_float(op, *l, *r),
             (Val::Compound(l, _), _) => {
-                self.eval_binary_bytes(op, &l, &right.bytes())
+                eval_binary_bytes(op, &l, &right.bytes())
             }
             (_, Val::Compound(r, _)) => {
-                self.eval_binary_bytes(op, &left.bytes(), &r)
+                eval_binary_bytes(op, &left.bytes(), &r)
             }
-        }
-    }
-
-    fn eval_binary_int(
-        &mut self,
-        op: BinOp,
-        lhs: IntVal,
-        rhs: IntVal,
-    ) -> IntVal {
-        match op {
-            BinOp::Add => lhs + rhs,
-            BinOp::Sub => lhs - rhs,
-            BinOp::Mul => lhs * rhs,
-            BinOp::Div => lhs / rhs,
-            BinOp::Rem => lhs % rhs,
-            BinOp::BitAnd => lhs & rhs,
-            BinOp::BitXor => lhs ^ rhs,
-            BinOp::BitOr => lhs | rhs,
-            BinOp::Shl => lhs << rhs,
-            BinOp::Shr => lhs >> rhs,
-            BinOp::Eq => (lhs == rhs) as IntVal,
-            BinOp::Neq => (lhs != rhs) as IntVal,
-            BinOp::And => (lhs != 0 && rhs != 0) as IntVal,
-            BinOp::Or => (lhs != 0 || rhs != 0) as IntVal,
-            BinOp::Lt => (lhs < rhs) as IntVal,
-            BinOp::Gt => (lhs > rhs) as IntVal,
-            BinOp::Leq => (lhs <= rhs) as IntVal,
-            BinOp::Geq => (lhs >= rhs) as IntVal,
-        }
-    }
-
-    fn eval_binary_float(
-        &mut self,
-        op: BinOp,
-        lhs: FloatVal,
-        rhs: FloatVal,
-    ) -> SResult<Val> {
-        let val = match op {
-            BinOp::Add => Val::Float(lhs + rhs),
-            BinOp::Sub => Val::Float(lhs - rhs),
-            BinOp::Mul => Val::Float(lhs * rhs),
-            BinOp::Div => Val::Float(lhs / rhs),
-            BinOp::Rem => Val::Float(lhs % rhs),
-            BinOp::Eq => {
-                Val::Integer(((lhs - rhs).abs() < f64::EPSILON) as IntVal)
-            }
-            BinOp::Neq => {
-                Val::Integer(((lhs - rhs).abs() > f64::EPSILON) as IntVal)
-            }
-            BinOp::And => Val::Integer((lhs != 0.0 && rhs != 0.0) as IntVal),
-            BinOp::Or => Val::Integer((lhs != 0.0 || rhs != 0.0) as IntVal),
-            BinOp::Lt => Val::Integer((lhs < rhs) as IntVal),
-            BinOp::Gt => Val::Integer((lhs > rhs) as IntVal),
-            BinOp::Leq => Val::Integer((lhs <= rhs) as IntVal),
-            BinOp::Geq => Val::Integer((lhs >= rhs) as IntVal),
-            _ => return Err(SErrorKind::InvalidType),
-        };
-
-        Ok(val)
-    }
-
-    fn eval_binary_bytes(
-        &mut self,
-        op: BinOp,
-        lhs: &[u8],
-        rhs: &[u8],
-    ) -> SResult<Val> {
-        match op {
-            BinOp::Eq => Ok(Val::Integer((lhs == rhs) as IntVal)),
-            BinOp::Neq => Ok(Val::Integer((lhs != rhs) as IntVal)),
-            _ => Err(SErrorKind::InvalidType),
         }
     }
 
@@ -338,5 +265,61 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 _ => Err(SErrorKind::InvalidType),
             },
         }
+    }
+}
+
+fn eval_binary_int(op: BinOp, lhs: IntVal, rhs: IntVal) -> IntVal {
+    match op {
+        BinOp::Add => lhs + rhs,
+        BinOp::Sub => lhs - rhs,
+        BinOp::Mul => lhs * rhs,
+        BinOp::Div => lhs / rhs,
+        BinOp::Rem => lhs % rhs,
+        BinOp::BitAnd => lhs & rhs,
+        BinOp::BitXor => lhs ^ rhs,
+        BinOp::BitOr => lhs | rhs,
+        BinOp::Shl => lhs << rhs,
+        BinOp::Shr => lhs >> rhs,
+        BinOp::Eq => (lhs == rhs) as IntVal,
+        BinOp::Neq => (lhs != rhs) as IntVal,
+        BinOp::And => (lhs != 0 && rhs != 0) as IntVal,
+        BinOp::Or => (lhs != 0 || rhs != 0) as IntVal,
+        BinOp::Lt => (lhs < rhs) as IntVal,
+        BinOp::Gt => (lhs > rhs) as IntVal,
+        BinOp::Leq => (lhs <= rhs) as IntVal,
+        BinOp::Geq => (lhs >= rhs) as IntVal,
+    }
+}
+
+fn eval_binary_float(op: BinOp, lhs: FloatVal, rhs: FloatVal) -> SResult<Val> {
+    let val = match op {
+        BinOp::Add => Val::Float(lhs + rhs),
+        BinOp::Sub => Val::Float(lhs - rhs),
+        BinOp::Mul => Val::Float(lhs * rhs),
+        BinOp::Div => Val::Float(lhs / rhs),
+        BinOp::Rem => Val::Float(lhs % rhs),
+        BinOp::Eq => {
+            Val::Integer(((lhs - rhs).abs() < f64::EPSILON) as IntVal)
+        }
+        BinOp::Neq => {
+            Val::Integer(((lhs - rhs).abs() > f64::EPSILON) as IntVal)
+        }
+        BinOp::And => Val::Integer((lhs != 0.0 && rhs != 0.0) as IntVal),
+        BinOp::Or => Val::Integer((lhs != 0.0 || rhs != 0.0) as IntVal),
+        BinOp::Lt => Val::Integer((lhs < rhs) as IntVal),
+        BinOp::Gt => Val::Integer((lhs > rhs) as IntVal),
+        BinOp::Leq => Val::Integer((lhs <= rhs) as IntVal),
+        BinOp::Geq => Val::Integer((lhs >= rhs) as IntVal),
+        _ => return Err(SErrorKind::InvalidType),
+    };
+
+    Ok(val)
+}
+
+fn eval_binary_bytes(op: BinOp, lhs: &[u8], rhs: &[u8]) -> SResult<Val> {
+    match op {
+        BinOp::Eq => Ok(Val::Integer((lhs == rhs) as IntVal)),
+        BinOp::Neq => Ok(Val::Integer((lhs != rhs) as IntVal)),
+        _ => Err(SErrorKind::InvalidType),
     }
 }

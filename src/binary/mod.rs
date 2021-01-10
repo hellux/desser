@@ -53,7 +53,7 @@ impl PrimType {
             //            PrimType::Signed(len) => *len,
             //            PrimType::Unsigned(len) => *len,
             //            PrimType::Float(exponent, mantissa) => 1 + exponent + mantissa,
-            PrimType::BitVec(len) => *len as u64,
+            PrimType::BitVec(len) => u64::from(*len),
             PrimType::U8 | PrimType::I8 | PrimType::Char => 8,
             PrimType::U16 | PrimType::I16 => 16,
             PrimType::U32 | PrimType::I32 | PrimType::F32 => 32,

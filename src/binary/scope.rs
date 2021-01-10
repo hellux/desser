@@ -25,8 +25,8 @@ impl<'n> Namespace<'n> {
         }
     }
 
-    pub fn get(&self, sym: &Sym) -> Option<&Name<'n>> {
-        self.space.get(sym)
+    pub fn get(&self, sym: Sym) -> Option<&Name<'n>> {
+        self.space.get(&sym)
     }
 
     pub fn insert(&mut self, sym: Sym, name: Name<'n>) {
@@ -207,7 +207,7 @@ impl<'n> Scope<'n> {
             .local_scopes
             .iter()
             .rev()
-            .find_map(|s| s.get(&sym))
+            .find_map(|s| s.get(sym))
         {
             return Ok(*name);
         }
@@ -224,7 +224,7 @@ impl<'n> Scope<'n> {
 
         /* check all above structs for struct specs and parameters */
         for st in self.structs.iter().rev() {
-            if let Some(name) = st.static_scope.get(&sym) {
+            if let Some(name) = st.static_scope.get(sym) {
                 return Ok(*name);
             }
         }
@@ -243,12 +243,13 @@ impl<'n> Scope<'n> {
     }
 
     pub fn insert_field(&mut self, sym_opt: Option<Sym>, nf: NameField) {
-        let sym = if let Some(sym) = sym_opt {
-            sym
-        } else {
-            self.unnamed -= 1;
-            self.unnamed
-        };
+        let sym = sym_opt.map_or_else(
+            || {
+                self.unnamed -= 1;
+                self.unnamed
+            },
+            |sym| sym,
+        );
 
         let curr = &mut self
             .structs

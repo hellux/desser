@@ -160,7 +160,7 @@ pub enum UnOp {
 }
 
 impl BinOp {
-    pub fn fixity(&self) -> (u8, u8) {
+    pub fn fixity(self) -> (u8, u8) {
         match self {
             BinOp::Mul | BinOp::Div | BinOp::Rem => (20, 21),
             BinOp::Add | BinOp::Sub => (17, 19),
@@ -177,7 +177,7 @@ impl BinOp {
 }
 
 impl UnOp {
-    pub fn fixity(&self) -> u8 {
+    pub fn fixity(self) -> u8 {
         match self {
             UnOp::Neg | UnOp::Not => 22,
         }

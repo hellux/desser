@@ -179,8 +179,7 @@ impl<'a> TokenCooker<'a> {
         start: usize,
     ) -> Option<TokKind> {
         match raw {
-            raw::TokenKind::LineComment => None,
-            raw::TokenKind::Whitespace => None,
+            raw::TokenKind::LineComment | raw::TokenKind::Whitespace => None,
             raw::TokenKind::BlockComment { closed } => {
                 if !closed {
                     self.err(LErrorKind::UnclosedBlockComment, start);

@@ -1,4 +1,4 @@
-//! The Desser lexer, inspired by rustc_lexer.
+//! The Desser lexer, inspired by `rustc_lexer`.
 //!
 //! Lexing is divided into three parts with each their own module:
 //!

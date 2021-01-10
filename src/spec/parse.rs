@@ -257,65 +257,55 @@ impl Parser {
         let mut stmts = Vec::new();
 
         while stream.not_empty() {
-            match stream.peek().unwrap() {
-                TokTree::Token(Token {
-                    kind: TokKind::Keyword(kw),
-                    ..
-                }) => {
-                    let kw = *kw;
-                    self.eat(&mut stream)?; // keyword
-                    match kw {
-                        Keyword::Let => {
-                            let (id, expr) = self.parse_assign(&mut stream)?;
-                            stmts.push(ast::Stmt::Let(id, expr));
-                        }
-                        Keyword::If => {
-                            stmts.push(ast::Stmt::If(
-                                self.parse_if(&mut stream)?,
-                            ));
-                        }
-                        Keyword::Constrain => {
-                            self.eat(&mut stream)?; // block
-                            let dn = self.expect_delim()?;
-                            stmts.push(ast::Stmt::Constrain(
-                                self.parse_expr_list(dn.stream)?,
-                            ));
-                        }
-                        Keyword::Debug => {
-                            self.eat(&mut stream)?; // block
-                            let dn = self.expect_delim()?;
-                            stmts.push(ast::Stmt::Debug(
-                                self.parse_expr_list(dn.stream)?,
-                            ));
-                        }
-                        Keyword::Def => {
-                            return Err(self.err_hint(
-                                UnexpectedKeyword(kw),
-                                "may only be defined in struct header",
-                            ));
-                        }
-                        Keyword::Const => {
-                            return Err(self.err_hint(
-                                UnexpectedKeyword(kw),
-                                "may only be defined in struct header",
-                            ));
-                        }
-                        _ => {
-                            return Err(self.err(UnexpectedKeyword(kw)));
-                        }
+            if let TokTree::Token(Token {
+                kind: TokKind::Keyword(kw),
+                ..
+            }) = stream.peek().unwrap()
+            {
+                let kw = *kw;
+                self.eat(&mut stream)?; // keyword
+                match kw {
+                    Keyword::Let => {
+                        let (id, expr) = self.parse_assign(&mut stream)?;
+                        stmts.push(ast::Stmt::Let(id, expr));
                     }
-                }
-                _ => {
-                    let field_stream = stream.eat_until(&TokKind::Comma);
-                    if stream.not_empty() {
-                        self.eat(&mut stream)?; // comma, trailing is optional
+                    Keyword::If => {
+                        stmts.push(ast::Stmt::If(self.parse_if(&mut stream)?));
                     }
-
-                    if field_stream.not_empty() {
-                        stmts.push(ast::Stmt::Field(
-                            self.parse_struct_field(field_stream)?,
+                    Keyword::Constrain => {
+                        self.eat(&mut stream)?; // block
+                        let dn = self.expect_delim()?;
+                        stmts.push(ast::Stmt::Constrain(
+                            self.parse_expr_list(dn.stream)?,
                         ));
                     }
+                    Keyword::Debug => {
+                        self.eat(&mut stream)?; // block
+                        let dn = self.expect_delim()?;
+                        stmts.push(ast::Stmt::Debug(
+                            self.parse_expr_list(dn.stream)?,
+                        ));
+                    }
+                    Keyword::Def | Keyword::Const => {
+                        return Err(self.err_hint(
+                            UnexpectedKeyword(kw),
+                            "may only be defined in struct header",
+                        ));
+                    }
+                    _ => {
+                        return Err(self.err(UnexpectedKeyword(kw)));
+                    }
+                }
+            } else {
+                let field_stream = stream.eat_until(&TokKind::Comma);
+                if stream.not_empty() {
+                    self.eat(&mut stream)?; // comma, trailing is optional
+                }
+
+                if field_stream.not_empty() {
+                    stmts.push(ast::Stmt::Field(
+                        self.parse_struct_field(field_stream)?,
+                    ));
                 }
             }
         }
@@ -440,11 +430,9 @@ impl Parser {
             }
             _ => None,
         };
-        let hidden = if let Some(sym) = id {
+        let hidden = id.map_or(false, |sym| {
             self.symtab.name(sym).unwrap().starts_with('_')
-        } else {
-            false
-        };
+        });
         self.assert_eof(&stream, "expected comma after field declaration");
 
         Ok(ast::Field {
@@ -801,7 +789,11 @@ impl Parser {
 
         while stream.not_empty() {
             match stream.peek().unwrap() {
-                TokTree::Token(tok) if matches!(tok.kind, TokKind::Dot | TokKind::Ident(_)) =>
+                TokTree::Token(tok)
+                    if matches!(
+                        tok.kind,
+                        TokKind::Dot | TokKind::Ident(_)
+                    ) =>
                 {
                     if matches!(tok.kind, TokKind::Dot) {
                         self.eat(stream)?; // dot

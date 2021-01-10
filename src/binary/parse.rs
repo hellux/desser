@@ -292,9 +292,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                             if let Some((c, b)) = if_stmt.elseifs.get(i) {
                                 if self.eval_nonzero(c)? {
                                     break b;
-                                } else {
-                                    i += 1;
                                 }
+                                i += 1;
                             } else {
                                 break &if_stmt.else_body;
                             }

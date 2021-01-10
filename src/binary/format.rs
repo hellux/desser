@@ -75,12 +75,10 @@ impl PrimType {
     fn eval(&self, data: &[u8]) -> Val {
         match self {
             PrimType::BitVec(_) => Val::Integer(le8_to_uint(data) as IntVal),
-            PrimType::Char => Val::Integer(u8::from_le_bytes(
+            PrimType::Char | PrimType::U8 => Val::Integer(u8::from_le_bytes(
                 data.try_into().unwrap(),
-            ) as IntVal),
-            PrimType::U8 => Val::Integer(u8::from_le_bytes(
-                data.try_into().unwrap(),
-            ) as IntVal),
+            )
+                as IntVal),
             PrimType::I8 => Val::Integer(i8::from_le_bytes(
                 data.try_into().unwrap(),
             ) as IntVal),

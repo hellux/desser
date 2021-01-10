@@ -65,11 +65,7 @@ impl Error {
         if let Some(st) = symtab {
             for (pos, id_opt) in &self.backtrace {
                 let (l, c) = sf.line_col(*pos);
-                let id_str = if let Some(id) = id_opt {
-                    st.name(*id).unwrap()
-                } else {
-                    ""
-                };
+                let id_str = id_opt.map_or("", |id| st.name(id).unwrap());
                 eprintln!(
                     "{:s$}   \x1b[0m {}:{}:{} {}",
                     "",
@@ -119,6 +115,7 @@ pub enum ErrorType {
 
 pub type Sym = u16;
 
+#[derive(Copy, Clone, Debug)]
 enum BuiltIn {
     IdentSelf,
     IdentSuper,
@@ -165,7 +162,7 @@ impl SymbolTable {
     }
 
     pub fn name(&self, sym: Sym) -> Option<&str> {
-        self.arr.get(sym as usize).map(|s| s.as_str())
+        self.arr.get(sym as usize).map(String::as_str)
     }
 
     fn insert(&mut self, name: &str) -> Sym {

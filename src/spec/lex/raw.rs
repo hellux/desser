@@ -66,7 +66,7 @@ pub enum Base {
 }
 
 impl Base {
-    pub fn radix(&self) -> u32 {
+    pub fn radix(self) -> u32 {
         match self {
             Base::Binary => 2,
             Base::Octal => 8,

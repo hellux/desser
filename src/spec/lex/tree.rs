@@ -40,10 +40,7 @@ pub struct TokenStream(Vec<TokTree>);
 
 impl TokenStream {
     pub fn peek(&self) -> Option<&TokTree> {
-        match self.0.get(0) {
-            Some(tree) => Some(&tree),
-            _ => None,
-        }
+        self.0.get(0)
     }
 
     pub fn eat(&mut self) -> Option<TokTree> {
@@ -55,8 +52,8 @@ impl TokenStream {
     }
 
     pub fn span(&self) -> Span {
-        let start = self.0.first().map(|tr| tr.pos()).unwrap_or(0);
-        let end = self.0.last().map(|tr| tr.span().1).unwrap_or(0);
+        let start = self.0.first().map_or(0, TokTree::pos);
+        let end = self.0.last().map_or(0, |tr| tr.span().1);
         Span(start, end)
     }
 
