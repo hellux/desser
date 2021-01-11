@@ -93,10 +93,6 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
     fn fmt_array(&mut self, arr: &Array, level: usize) -> io::Result<()> {
         let w = format!("{}", arr.elements.len()).len();
 
-        if level > 1 {
-            write!(self.out, "{} ", arr.elements.len())?;
-        }
-
         if !arr.elements.is_empty() {
             if let StructField::Prim(Ptr {
                 pty: PrimType::Char,
@@ -108,6 +104,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                 }
             } else {
                 if level > 1 {
+                    write!(self.out, "{} ", arr.elements.len())?;
                     self.out.write_all(b"[\n")?;
                 }
 
