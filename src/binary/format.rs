@@ -118,7 +118,7 @@ impl PrimType {
             PrimType::BitVec(n) => {
                 write!(out, "{:0n$b}", le8_to_uint(data), n = *n as usize)
             }
-            PrimType::Char => write!(out, "{}", data[0] as char),
+            PrimType::Char => write!(out, "{}", if 31 < data[0] && data[0] < 127 { data[0] as char } else { '.' }),
             PrimType::U8
             | PrimType::I8
             | PrimType::U16
