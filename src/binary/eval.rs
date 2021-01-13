@@ -156,6 +156,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 (NameFunc::AddrOf, [lval]) => self.eval_addrof(lval),
                 (NameFunc::SizeOf, [lval]) => self.eval_sizeof(lval),
                 (NameFunc::EndOf, [lval]) => self.eval_endof(lval),
+                (NameFunc::OffsOf, [lval]) => self.eval_offsof(lval),
                 (NameFunc::Len, [lval]) => self.eval_len(lval),
                 _ => Err(SErrorKind::InvalidType),
             }
@@ -205,6 +206,15 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .size()
             .ok_or(SErrorKind::InvalidType)?;
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
+    }
+
+    fn eval_offsof(&mut self, expr: &'a Expr) -> SResult<Val> {
+        self.eval_partial(expr)?
+            .name()?
+            .field()?
+            .start()
+            .map(|a| Val::Integer((BytePos::from(a-self.scope.base())).size() as IntVal))
+            .ok_or(SErrorKind::InvalidType)
     }
 
     fn eval_len(&mut self, expr: &'a Expr) -> SResult<Val> {

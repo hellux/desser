@@ -124,6 +124,7 @@ enum BuiltIn {
     FuncAddrOf,
     FuncSizeOf,
     FuncEndOf,
+    FuncOffsOf,
 }
 
 impl BuiltIn {
@@ -135,6 +136,7 @@ impl BuiltIn {
             Self::FuncAddrOf => "addrof",
             Self::FuncSizeOf => "sizeof",
             Self::FuncEndOf => "endof",
+            Self::FuncOffsOf => "offsof",
         }
     }
 }
@@ -158,6 +160,7 @@ impl SymbolTable {
         tbl.insert(BuiltIn::FuncAddrOf.name());
         tbl.insert(BuiltIn::FuncSizeOf.name());
         tbl.insert(BuiltIn::FuncEndOf.name());
+        tbl.insert(BuiltIn::FuncOffsOf.name());
 
         tbl
     }

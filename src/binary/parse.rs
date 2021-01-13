@@ -71,15 +71,16 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn seek_loc(&mut self, loc: &ast::Location) -> SResult<()> {
-        //let base = self.scope.base();
+        let struct_base = self.scope.base();
         match &loc.expr {
             Some(expr) => {
                 let base = match loc.base {
                     AddrBase::Absolute => BitPos::new(0),
                     AddrBase::Relative => self.pos,
-                    AddrBase::Local => BitPos::new(0), // FIXME
+                    AddrBase::Local => struct_base,
                 };
 
+                // TODO restrict addresses before struct_base?
                 let val = self.eval_size(expr)? as u64;
                 let offset = if loc.bitwise {
                     BitSize::new(val)

@@ -72,6 +72,7 @@ pub enum NameFunc {
     AddrOf,
     SizeOf,
     EndOf,
+    OffsOf,
     Len,
 }
 
@@ -177,6 +178,7 @@ impl<'n> Scope<'n> {
         ns.insert(st.builtin(FuncAddrOf), Name::Func(NameFunc::AddrOf));
         ns.insert(st.builtin(FuncSizeOf), Name::Func(NameFunc::SizeOf));
         ns.insert(st.builtin(FuncEndOf), Name::Func(NameFunc::EndOf));
+        ns.insert(st.builtin(FuncOffsOf), Name::Func(NameFunc::OffsOf));
 
         let builtins = StructScope {
             static_scope: ns,
@@ -193,6 +195,19 @@ impl<'n> Scope<'n> {
             super_sym: st.builtin(IdentSuper),
             unnamed: Sym::max_value(),
         }
+    }
+
+    pub fn base(&self) -> BitPos {
+        self.structs
+            .last()
+            .unwrap()
+            .local_scopes[0]
+            .get(self.super_sym)
+            .unwrap()
+            .field()
+            .unwrap()
+            .start()
+            .unwrap()
     }
 
     pub fn get(&self, sym: Sym) -> SResult<Name<'n>> {
