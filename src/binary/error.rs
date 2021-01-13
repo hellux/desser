@@ -23,7 +23,7 @@ pub type SResult<T> = Result<T, SErrorKind>;
 
 #[derive(Debug)]
 pub struct SError {
-    pub backtrace: Vec<(Span, Option<Sym>)>,
+    pub backtrace: Vec<(Span, Option<Sym>, BitPos)>,
     pub pos: BitPos,
     pub kind: SErrorKind,
 }
@@ -59,7 +59,7 @@ impl Error {
             backtrace: s
                 .backtrace
                 .iter()
-                .map(|(sp, sy)| (sp.0, *sy))
+                .map(|(sp, sy, pos)| (sp.0, *sy, *pos))
                 .collect(),
             desc,
             hint,

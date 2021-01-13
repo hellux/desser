@@ -41,7 +41,7 @@ pub enum PrimType<T> {
 #[derive(Debug)]
 pub struct Error {
     pub span: Span,
-    pub backtrace: Vec<(u32, Option<Sym>)>,
+    pub backtrace: Vec<(u32, Option<Sym>, binary::BitPos)>,
     pub desc: String,
     pub hint: Option<&'static str>,
     pub ty: ErrorType,
@@ -63,16 +63,17 @@ impl Error {
 
         eprintln!("\x1b[1;31merror\x1b[0;1m: {}", self.desc);
         if let Some(st) = symtab {
-            for (pos, id_opt) in &self.backtrace {
-                let (l, c) = sf.line_col(*pos);
+            for (src_pos, id_opt, bin_pos) in &self.backtrace {
+                let (l, c) = sf.line_col(*src_pos);
                 let id_str = id_opt.map_or("", |id| st.name(id).unwrap());
                 eprintln!(
-                    "{:s$}   \x1b[0m {}:{}:{} {}",
+                    "{:s$}   \x1b[0m {}:{}:{} {} -- 0x{}",
                     "",
                     sf.path,
                     l,
                     c,
                     id_str,
+                    bin_pos,
                     s = ind
                 );
             }

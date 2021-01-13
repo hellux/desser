@@ -11,7 +11,7 @@ use std::convert::TryInto;
 
 use crate::spec::ast;
 use crate::{Error, Order, Sym, SymbolTable};
-use bits::*;
+pub use bits::*;
 use std::io::{BufRead, Seek};
 pub use structure::*;
 pub use view::view_structure;

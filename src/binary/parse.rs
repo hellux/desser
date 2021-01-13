@@ -37,7 +37,7 @@ struct FileParser<'s, R> {
     pos: BitPos,
     length: BitSize,
     scope: Scope<'s>,
-    traversed_fields: Vec<(Span, Option<Sym>)>,
+    traversed_fields: Vec<(Span, Option<Sym>, BitPos)>,
     symtab: &'s SymbolTable,
     self_sym: Sym,
 }
@@ -419,7 +419,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn parse_field(&mut self, field: &ast::Field) -> SResult<()> {
-        self.traversed_fields.push((field.span, field.id));
+        self.traversed_fields.push((field.span, field.id, self.pos));
 
         let name = self.parse_field_type(&field.ty)?;
 
