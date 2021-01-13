@@ -21,7 +21,7 @@ syn match dsrDec display "\<[0-9][0-9_]*"
 syn match dsrHex display "\<0x[0-9a-f][0-9a-f_]*"
 syn keyword dsrEndianness le be
 syn keyword dsrSelf self super
-syn keyword dsrFun addrof sizeof endof
+syn keyword dsrFun addrof sizeof endof offsof len
 syn match dsrEscape display contained /\\\([nrt0\\'"]\|x\x\{2}\)/
 syn region dsrString start=+"+ end=+"+ contains=dsrEscape
 
