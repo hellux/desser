@@ -198,16 +198,7 @@ impl<'n> Scope<'n> {
     }
 
     pub fn base(&self) -> BitPos {
-        self.structs
-            .last()
-            .unwrap()
-            .local_scopes[0]
-            .get(self.super_sym)
-            .unwrap()
-            .field()
-            .unwrap()
-            .start()
-            .unwrap()
+        self.structs.last().unwrap().blocks[0].start().unwrap()
     }
 
     pub fn get(&self, sym: Sym) -> SResult<Name<'n>> {
@@ -216,6 +207,10 @@ impl<'n> Scope<'n> {
                 self.structs.last().unwrap(),
             )
         };
+
+        if sym == self.super_sym {
+            return Ok(Name::Field(&current_struct.blocks[0]));
+        }
 
         /* check all local scopes within struct for variables */
         if let Some(name) = current_struct
@@ -298,16 +293,9 @@ impl<'n> Scope<'n> {
             size: BitSize::new(0),
             fields: FieldSpace::new(),
         })];
-        let mut local = Namespace::new();
-        local.insert(
-            self.super_sym,
-            Name::Field(unsafe {
-                std::mem::transmute::<&NameField, &'n NameField>(&blocks[0])
-            }),
-        );
         self.structs.push(StructScope {
             static_scope,
-            local_scopes: vec![local],
+            local_scopes: vec![Namespace::new()],
             blocks,
         });
     }
