@@ -71,7 +71,13 @@ fn parse_options() -> Options {
     } else if let Some(spec_fname) = spec_fname {
         let mut src = String::new();
         let path = std::path::Path::new(&spec_fname);
-        let mut src_file = std::fs::File::open(path).unwrap();
+        let mut src_file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error when loading spec '{}' -- {}", spec_fname, e);
+                std::process::exit(1);
+            }
+        };
         src_file.read_to_string(&mut src).expect("spec not unicode");
         SpecFile::new(&path.to_string_lossy(), src)
     } else {
@@ -81,7 +87,13 @@ fn parse_options() -> Options {
     };
 
     let input = if let Some(fname) = input_fname {
-        File::open(&fname).unwrap()
+        match File::open(&fname) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("error when loading input file '{}' -- {}", fname, e);
+                std::process::exit(1);
+            }
+        }
     } else {
         eprintln!("no input file provided");
         exit_usage(&program);
