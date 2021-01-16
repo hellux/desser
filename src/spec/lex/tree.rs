@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::SymbolTable;
 
 use super::cook::{Delim, TokKind, Token, TokenCooker};
@@ -36,7 +38,7 @@ impl TokTree {
 }
 
 #[derive(Debug, Clone)]
-pub struct TokenStream(Vec<TokTree>);
+pub struct TokenStream(VecDeque<TokTree>);
 
 impl TokenStream {
     pub fn peek(&self) -> Option<&TokTree> {
@@ -44,16 +46,12 @@ impl TokenStream {
     }
 
     pub fn eat(&mut self) -> Option<TokTree> {
-        if self.0.is_empty() {
-            None
-        } else {
-            Some(self.0.remove(0))
-        }
+        self.0.pop_front()
     }
 
     pub fn span(&self) -> Span {
-        let start = self.0.first().map_or(0, TokTree::pos);
-        let end = self.0.last().map_or(0, |tr| tr.span().1);
+        let start = self.0.front().map_or(0, TokTree::pos);
+        let end = self.0.back().map_or(0, |tr| tr.span().1);
         Span(start, end)
     }
 
@@ -75,22 +73,21 @@ impl TokenStream {
     where
         P: FnMut(&TokKind) -> bool,
     {
-        let mut taken = Vec::new();
+        let mut i: usize = 0;
 
         loop {
-            match self.peek() {
-                Some(TokTree::Token(token)) => {
-                    if !pred(&token.kind) {
-                        break;
-                    }
-                }
+            match self.0.get(i) {
+                Some(TokTree::Token(token)) if !pred(&token.kind) => break,
                 None => break,
                 _ => {}
             }
-            taken.push(self.eat().unwrap());
+            i += 1;
         }
 
-        TokenStream(taken)
+        let remaining = self.0.split_off(i);
+        let eaten = std::mem::replace(&mut self.0, remaining);
+
+        TokenStream(eaten)
     }
 
     pub fn eat_until(&mut self, kind: &TokKind) -> Self {
@@ -134,11 +131,11 @@ impl<'a> TokTreesReader<'a> {
     }
 
     fn parse_all(&mut self) -> LResult<TokenStream> {
-        let mut trees = Vec::new();
+        let mut trees = VecDeque::new();
 
         self.eat();
         while self.token.kind != TokKind::Eof {
-            trees.push(self.parse_token_tree()?);
+            trees.push_back(self.parse_token_tree()?);
         }
 
         Ok(TokenStream(trees))
@@ -192,7 +189,7 @@ impl<'a> TokTreesReader<'a> {
     }
 
     fn parse_until_close_delim(&mut self) -> LResult<TokenStream> {
-        let mut trees = Vec::new();
+        let mut trees = VecDeque::new();
 
         loop {
             match self.token.kind {
@@ -206,7 +203,7 @@ impl<'a> TokTreesReader<'a> {
                     });
                 }
                 _ => {
-                    trees.push(self.parse_token_tree()?);
+                    trees.push_back(self.parse_token_tree()?);
                 }
             }
         }
