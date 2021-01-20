@@ -1,6 +1,6 @@
 use std::io::{Read, Seek};
 
-use super::error::{SErrorKind, SResult};
+use super::error::{EError, EErrorKind, EResult};
 use super::scope::{Name, NameArray, NameField, NameFunc, NameStruct, Scope};
 use super::*;
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
@@ -10,7 +10,7 @@ pub(super) fn eval<'a, R: Read + Seek>(
     expr: &'a Expr,
     f: &mut R,
     scope: &Scope,
-) -> SResult<Val> {
+) -> EResult<Val> {
     Eval::new(f, scope).eval(expr)
 }
 
@@ -18,7 +18,7 @@ pub(super) fn eval_partial<'a, R: Read + Seek>(
     expr: &'a Expr,
     f: &'a mut R,
     scope: &'a Scope<'a>,
-) -> SResult<Partial<'a>> {
+) -> EResult<Partial<'a>> {
     Eval::new(f, scope).eval_partial(expr)
 }
 
@@ -39,29 +39,29 @@ pub(super) enum Partial<'a> {
 }
 
 impl<'a> Partial<'a> {
-    pub fn name(self) -> SResult<Name<'a>> {
+    pub fn name(self) -> Option<Name<'a>> {
         if let Partial::Name(name) = self {
-            Ok(name)
+            Some(name)
         } else {
-            Err(SErrorKind::InvalidType)
+            None
         }
     }
 }
 
 impl Val {
-    pub fn int(&self) -> SResult<IntVal> {
+    pub fn int(&self) -> Option<IntVal> {
         if let Val::Integer(val) = self {
-            Ok(*val)
+            Some(*val)
         } else {
-            Err(SErrorKind::NotAnIntegerValue)
+            None
         }
     }
 
-    pub fn float(&self) -> SResult<FloatVal> {
+    pub fn float(&self) -> Option<FloatVal> {
         match self {
-            Val::Integer(val) => Ok(*val as FloatVal),
-            Val::Float(val) => Ok(*val),
-            _ => Err(SErrorKind::NotAFloatValue),
+            Val::Integer(val) => Some(*val as FloatVal),
+            Val::Float(val) => Some(*val),
+            _ => None,
         }
     }
 
@@ -84,52 +84,77 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         Eval { f, scope }
     }
 
-    fn eval(&mut self, expr: &'a Expr) -> SResult<Val> {
-        Ok(match &expr.kind {
+    fn eval(&mut self, expr: &'a Expr) -> EResult<Val> {
+        match &expr.kind {
             ExprKind::Variable(_)
             | ExprKind::Member(_, _)
-            | ExprKind::Index(_, _) => {
-                let name = self.eval_partial(expr)?.name()?;
-                self.eval_name(name)?
-            }
+            | ExprKind::Index(_, _) => self.eval_partial(expr).and_then(|p| {
+                self.eval_name(p.name().unwrap())
+                    .ok_or(expr.err(EErrorKind::NonValue))
+            }),
             ExprKind::Literal(kind) => match kind {
-                LitKind::Int(i) => Val::Integer(*i),
-                LitKind::Char(i) => Val::Integer(*i as IntVal),
-                LitKind::Str(bytes) => Val::Compound(
+                LitKind::Int(i) => Ok(Val::Integer(*i)),
+                LitKind::Char(i) => Ok(Val::Integer(*i as IntVal)),
+                LitKind::Str(bytes) => Ok(Val::Compound(
                     bytes.clone(),
                     ByteSize(bytes.len() as u64).into(),
-                ),
+                )),
             },
-            //ExprKind::Array(elems) => todo!(),
-            ExprKind::Call(func, args) => self.eval_call(func, args)?,
-            ExprKind::AddrOf(obj) => self.eval_addrof(obj)?,
+            ExprKind::Call(func, args) => self.eval_call(func, args),
+            ExprKind::AddrOf(obj) => self.eval_addrof(obj),
             ExprKind::Binary(op, lhs, rhs) => {
-                self.eval_binary(*op, &lhs, &rhs)?
+                self.eval_binary(*op, &lhs, &rhs)
             }
-            ExprKind::Unary(op, expr) => self.eval_unary(*op, &expr)?,
-        })
+            ExprKind::Unary(op, expr) => self.eval_unary(*op, &expr),
+        }
     }
 
-    fn eval_partial(&mut self, expr: &'a Expr) -> SResult<Partial<'a>> {
+    fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial<'a>> {
         Ok(match &expr.kind {
-            ExprKind::Variable(sym) => Partial::Name(self.scope.get(*sym)?),
+            ExprKind::Variable(sym) => Partial::Name(
+                self.scope
+                    .get(*sym)
+                    .ok_or(expr.err(EErrorKind::IdentifierNotFound(*sym)))?,
+            ),
             ExprKind::Member(st, sym) => {
-                let struct_name = self.eval_partial(&st)?.name()?.field()?;
-                Partial::Name(Name::Field(struct_name.get_field(*sym)?))
+                let struct_name = self
+                    .eval_partial(&st)?
+                    .name()
+                    .and_then(|n| n.field())
+                    .ok_or(st.err(EErrorKind::NonStruct))?;
+                Partial::Name(Name::Field(
+                    struct_name
+                        .get_field(*sym)
+                        .ok_or(expr.err(EErrorKind::MemberNotFound(*sym)))?,
+                ))
             }
             ExprKind::Index(arr, idx_expr) => {
-                let arr_name = self.eval_partial(&arr)?.name()?.field()?;
+                let arr_name = self
+                    .eval_partial(&arr)?
+                    .name()
+                    .and_then(|n| n.field())
+                    .ok_or(arr.err(EErrorKind::NonArray))?;
                 let idx = self.eval(&idx_expr)?;
+                let i = idx
+                    .int()
+                    .ok_or(idx_expr.err(EErrorKind::NonIntegerIndex))?;
+                let u = if i >= 0 {
+                    i as usize
+                } else {
+                    return Err(idx_expr.err(EErrorKind::NegativeIndex));
+                };
                 Partial::Name(Name::Field(
-                    arr_name.get_element(idx.int()? as usize)?,
+                    arr_name
+                        .get_element(u)
+                        .ok_or(expr.err(EErrorKind::ElementNotFound(u)))?,
                 ))
             }
             _ => Partial::Value(self.eval(expr)?),
         })
     }
 
-    fn eval_name(&mut self, name: Name<'a>) -> SResult<Val> {
-        Ok(match name {
+    fn eval_name(&mut self, name: Name<'a>) -> Option<Val> {
+        Some(match name {
             Name::Value(val) => val.clone(),
             Name::Field(nf) => match nf {
                 NameField::Prim(ptr) => ptr.eval(self.f),
@@ -146,89 +171,92 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     )
                 }
             },
-            _ => return Err(SErrorKind::InvalidType),
+            _ => return None,
         })
     }
 
-    fn eval_call(&mut self, func: &'a Expr, args: &'a [Expr]) -> SResult<Val> {
-        if let Name::Func(nfunc) = self.eval_partial(func)?.name()? {
+    fn eval_call(&mut self, func: &'a Expr, args: &'a [Expr]) -> EResult<Val> {
+        if let Name::Func(nfunc) = self
+            .eval_partial(func)?
+            .name()
+            .ok_or(func.err(EErrorKind::NonFunction))?
+        {
             match (nfunc, args) {
                 (NameFunc::AddrOf, [lval]) => self.eval_addrof(lval),
                 (NameFunc::SizeOf, [lval]) => self.eval_sizeof(lval),
                 (NameFunc::EndOf, [lval]) => self.eval_endof(lval),
                 (NameFunc::OffsOf, [lval]) => self.eval_offsof(lval),
                 (NameFunc::Len, [lval]) => self.eval_len(lval),
-                _ => Err(SErrorKind::InvalidType),
+                _ => Err(func.err(EErrorKind::ArgumentMismatch)),
             }
         } else {
-            Err(SErrorKind::InvalidType)
+            Err(func.err(EErrorKind::NonFunction))
         }
     }
 
-    fn eval_addrof(&mut self, expr: &'a Expr) -> SResult<Val> {
+    fn eval_addrof(&mut self, expr: &'a Expr) -> EResult<Val> {
         self.eval_partial(expr)?
-            .name()?
-            .field()?
-            .start()
-            .map(|a| Val::Integer(BytePos::from(a).size() as IntVal))
-            .ok_or(SErrorKind::InvalidType)
+            .name()
+            .and_then(|n| n.field())
+            .ok_or(expr.err(EErrorKind::NonField))
+            .map(|nf| Val::Integer(BytePos::from(nf.start()).size() as IntVal))
     }
 
-    fn eval_sizeof(&mut self, expr: &'a Expr) -> SResult<Val> {
+    fn eval_sizeof(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self
             .eval_partial(expr)?
-            .name()?
-            .field()?
-            .start()
-            .ok_or(SErrorKind::InvalidType)?;
+            .name()
+            .and_then(|n| n.field())
+            .ok_or(expr.err(EErrorKind::NonField))
+            .map(|nf| nf.start())?;
         let size = self
             .eval_partial(expr)?
-            .name()?
-            .field()?
-            .size()
-            .ok_or(SErrorKind::InvalidType)?;
+            .name()
+            .and_then(|n| n.field())
+            .ok_or(expr.err(EErrorKind::NonField))
+            .map(|nf| nf.size())?;
         Ok(Val::Integer(
             ByteSize::from_unaligned(start, size).size() as IntVal
         ))
     }
 
-    fn eval_endof(&mut self, expr: &'a Expr) -> SResult<Val> {
+    fn eval_endof(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self
             .eval_partial(expr)?
-            .name()?
-            .field()?
-            .start()
-            .ok_or(SErrorKind::InvalidType)?;
+            .name()
+            .and_then(|n| n.field())
+            .ok_or(expr.err(EErrorKind::NonField))
+            .map(|nf| nf.start())?;
         let size = self
             .eval_partial(expr)?
-            .name()?
-            .field()?
-            .size()
-            .ok_or(SErrorKind::InvalidType)?;
+            .name()
+            .and_then(|n| n.field())
+            .ok_or(expr.err(EErrorKind::NonField))
+            .map(|nf| nf.size())?;
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
-    fn eval_offsof(&mut self, expr: &'a Expr) -> SResult<Val> {
+    fn eval_offsof(&mut self, expr: &'a Expr) -> EResult<Val> {
         self.eval_partial(expr)?
-            .name()?
-            .field()?
-            .start()
-            .map(|a| {
+            .name()
+            .and_then(|n| n.field())
+            .ok_or(expr.err(EErrorKind::NonField))
+            .map(|nf| {
                 Val::Integer(
-                    (BytePos::from(a - self.scope.base())).size() as IntVal
+                    (BytePos::from(nf.start() - self.scope.base())).size()
+                        as IntVal,
                 )
             })
-            .ok_or(SErrorKind::InvalidType)
     }
 
-    fn eval_len(&mut self, expr: &'a Expr) -> SResult<Val> {
-        Ok(Val::Integer(
-            match self.eval_partial(expr)?.name()?.field()? {
-                NameField::Struct(nst) => nst.fields.len(),
-                NameField::Array(narr) => narr.elements.len(),
-                _ => return Err(SErrorKind::InvalidType),
-            } as IntVal,
-        ))
+    fn eval_len(&mut self, expr: &'a Expr) -> EResult<Val> {
+        if let Some(NameField::Array(narr)) =
+            self.eval_partial(expr)?.name().and_then(|n| n.field())
+        {
+            Ok(Val::Integer(narr.elements.len() as IntVal))
+        } else {
+            Err(expr.err(EErrorKind::NonArray))
+        }
     }
 
     pub fn eval_binary(
@@ -236,13 +264,13 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         op: BinOp,
         lhs: &'a Expr,
         rhs: &'a Expr,
-    ) -> SResult<Val> {
+    ) -> EResult<Val> {
         let left = self.eval(&lhs)?;
         let right = self.eval(&rhs)?;
 
         match (&left, &right) {
             (Val::Integer(l), Val::Integer(r)) => {
-                Ok(Val::Integer(eval_binary_int(op, *l, *r)))
+                Some(Val::Integer(eval_binary_int(op, *l, *r)))
             }
             (Val::Float(l), Val::Integer(_)) => {
                 eval_binary_float(op, *l, right.float().unwrap())
@@ -258,9 +286,13 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 eval_binary_bytes(op, &left.bytes(), &r)
             }
         }
+        .ok_or(EError(
+            lhs.span.merge(rhs.span),
+            EErrorKind::BinaryTypeError,
+        ))
     }
 
-    fn eval_unary(&mut self, op: UnOp, lhs: &'a Expr) -> SResult<Val> {
+    fn eval_unary(&mut self, op: UnOp, lhs: &'a Expr) -> EResult<Val> {
         let val = self.eval(&lhs)?;
 
         match val {
@@ -276,7 +308,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 UnOp::Not => {
                     Ok(Val::Integer(bytes.iter().all(|b| *b == 0) as IntVal))
                 }
-                _ => Err(SErrorKind::InvalidType),
+                _ => Err(lhs.err(EErrorKind::UnaryCompound)),
             },
         }
     }
@@ -305,7 +337,7 @@ fn eval_binary_int(op: BinOp, lhs: IntVal, rhs: IntVal) -> IntVal {
     }
 }
 
-fn eval_binary_float(op: BinOp, lhs: FloatVal, rhs: FloatVal) -> SResult<Val> {
+fn eval_binary_float(op: BinOp, lhs: FloatVal, rhs: FloatVal) -> Option<Val> {
     let val = match op {
         BinOp::Add => Val::Float(lhs + rhs),
         BinOp::Sub => Val::Float(lhs - rhs),
@@ -324,16 +356,16 @@ fn eval_binary_float(op: BinOp, lhs: FloatVal, rhs: FloatVal) -> SResult<Val> {
         BinOp::Gt => Val::Integer((lhs > rhs) as IntVal),
         BinOp::Leq => Val::Integer((lhs <= rhs) as IntVal),
         BinOp::Geq => Val::Integer((lhs >= rhs) as IntVal),
-        _ => return Err(SErrorKind::InvalidType),
+        _ => return None,
     };
 
-    Ok(val)
+    Some(val)
 }
 
-fn eval_binary_bytes(op: BinOp, lhs: &[u8], rhs: &[u8]) -> SResult<Val> {
+fn eval_binary_bytes(op: BinOp, lhs: &[u8], rhs: &[u8]) -> Option<Val> {
     match op {
-        BinOp::Eq => Ok(Val::Integer((lhs == rhs) as IntVal)),
-        BinOp::Neq => Ok(Val::Integer((lhs != rhs) as IntVal)),
-        _ => Err(SErrorKind::InvalidType),
+        BinOp::Eq => Some(Val::Integer((lhs == rhs) as IntVal)),
+        BinOp::Neq => Some(Val::Integer((lhs != rhs) as IntVal)),
+        _ => None,
     }
 }

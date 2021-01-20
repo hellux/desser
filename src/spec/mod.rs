@@ -105,4 +105,8 @@ impl Span {
     pub fn new(lo: usize, hi: usize) -> Self {
         Span(lo as u32, hi as u32)
     }
+
+    pub fn merge(self, other: Span) -> Self {
+        Span(self.0, other.1)
+    }
 }

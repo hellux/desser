@@ -1,25 +1,56 @@
-use super::bits::*;
+use crate::spec::ast::Expr;
 use crate::{Error, ErrorType, Span, Sym, SymbolTable};
+
+use super::bits::*;
+use super::eval::IntVal;
 
 #[derive(Debug)]
 pub enum SErrorKind {
-    IdentifierNotInScope(Sym),
-    FormalActualMismatch,
-    InvalidType,
-    NotAField,
-    NotAStruct,
-    NotAnArray,
-    NotAnIntegerValue,
-    NotAFloatValue,
-    NegativeSize,
-    IndexNotFound(u64),
-    InvalidValue(u64),
+    TypeNotFound(Sym),
+    NonSpec(Sym),
+    FormalActualMismatch(usize, usize),
+    NonPositiveAlignment(IntVal),
     EndOfFile(BitSize),
-    AddrBeforeBase(u64),
-    FailedConstraint,
+    FailedConstraint(Span),
+    Expr(EError),
+}
+
+#[derive(Debug, Clone)]
+pub struct EError(pub Span, pub EErrorKind);
+
+#[derive(Debug, Copy, Clone)]
+pub enum EErrorKind {
+    IdentifierNotFound(Sym),
+    MemberNotFound(Sym),
+    ElementNotFound(usize),
+    ArgumentMismatch,
+    BinaryTypeError,
+    UnaryCompound,
+    NonArray,
+    NonField,
+    NonFunction,
+    NonStruct,
+    NonValue,
+    NonIntegerIndex,
+    NegativeIndex,
+    NonIntegerSize,
+    NegativeSize,
+}
+
+impl Expr {
+    pub fn err(&self, kind: EErrorKind) -> EError {
+        EError(self.span, kind)
+    }
 }
 
 pub type SResult<T> = Result<T, SErrorKind>;
+pub type EResult<T> = Result<T, EError>;
+
+impl From<EError> for SErrorKind {
+    fn from(e: EError) -> Self {
+        SErrorKind::Expr(e)
+    }
+}
 
 #[derive(Debug)]
 pub struct SError {
@@ -30,32 +61,29 @@ pub struct SError {
 
 impl Error {
     pub fn from(mut s: SError, symtab: &SymbolTable) -> Self {
-        let desc = match s.kind {
-            SErrorKind::IdentifierNotInScope(sym) => format!(
-                "identifier '{}' not in scope",
-                String::from(symtab.name(sym).unwrap()),
+        let desc = match &s.kind {
+            SErrorKind::TypeNotFound(sym) => format!(
+                "type '{}' not found",
+                String::from(symtab.name(*sym).unwrap()),
             ),
-            SErrorKind::InvalidValue(val) => {
-                format!("value '{}' is not valid here at {}", val, s.pos)
+            SErrorKind::EndOfFile(size) => {
+                format!("end of file reached at {}", size)
             }
-            SErrorKind::EndOfFile(size) => format!(
-                "end of file reached at {} while parsing field at {}",
-                size, s.pos
-            ),
-            SErrorKind::AddrBeforeBase(base) => format!(
-                "jump to {} which is before current struct base at {:x}",
-                s.pos,
-                base / 8
-            ),
-            SErrorKind::FailedConstraint => {
-                format!("unable to match constraint at {}", s.pos,)
+            SErrorKind::FailedConstraint(_) => {
+                "unable to match constraint".to_string()
             }
             k => format!("{:?}", k),
         };
         let hint = None;
 
+        let span = match s.kind {
+            SErrorKind::Expr(e) => e.0,
+            SErrorKind::FailedConstraint(sp) => sp,
+            _ => s.backtrace.pop().unwrap().0,
+        };
+
         Error {
-            span: s.backtrace.pop().unwrap().0,
+            span,
             backtrace: s
                 .backtrace
                 .iter()

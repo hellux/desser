@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::io::{BufRead, Seek, SeekFrom};
 
-use super::error::{SError, SErrorKind, SResult};
+use super::error::{EErrorKind, EResult, SError, SErrorKind, SResult};
 use super::eval::{IntVal, Partial, Val};
 use super::scope::{
     IndexSpace, Name, NameArray, NameField, NameStruct, Namespace, Scope,
@@ -98,16 +98,16 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn align(&mut self, alignment: &ast::Alignment) -> SResult<()> {
         match &alignment.expr {
             Some(expr) => {
-                let al = self.eval_size(expr)? as u64;
+                let al = self.eval_size(expr)?;
                 if al > 0 {
-                    let al = if alignment.bitwise {
-                        BitSize::new(al)
+                    let al_bs = if alignment.bitwise {
+                        BitSize::new(al as u64)
                     } else {
-                        ByteSize(al).into()
+                        ByteSize(al as u64).into()
                     };
-                    self.pos = self.pos.align(al);
+                    self.pos = self.pos.align(al_bs);
                 } else {
-                    return Err(SErrorKind::InvalidValue(al as u64));
+                    return Err(SErrorKind::NonPositiveAlignment(al));
                 }
             }
             None => {}
@@ -116,15 +116,15 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         Ok(())
     }
 
-    fn eval(&mut self, expr: &ast::Expr) -> SResult<Val> {
-        eval::eval(expr, self.f, &self.scope)
+    fn eval(&mut self, expr: &ast::Expr) -> EResult<Val> {
+        eval::eval(expr, self.f, &self.scope).map_err(|e| e.into())
     }
 
-    fn eval_size(&mut self, expr: &ast::Expr) -> SResult<IntVal> {
+    fn eval_size(&mut self, expr: &ast::Expr) -> EResult<IntVal> {
         match self.eval(expr)? {
             Val::Integer(size) if size >= 0 => Ok(size),
-            Val::Integer(_neg) => Err(SErrorKind::NegativeSize),
-            _ => Err(SErrorKind::InvalidType),
+            Val::Integer(_neg) => Err(expr.err(EErrorKind::NegativeSize)),
+            _ => Err(expr.err(EErrorKind::NonIntegerSize)),
         }
     }
 
@@ -177,7 +177,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             let name = match self.parse_field_type(&arr.ty) {
                 Ok(name) => name,
                 Err(k) => match k {
-                    SErrorKind::FailedConstraint
+                    SErrorKind::FailedConstraint(_)
                     | SErrorKind::EndOfFile(_)
                         if is.len() >= min_size as usize =>
                     {
@@ -189,7 +189,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             };
 
             if start.is_none() {
-                start = name.start();
+                start = Some(name.start());
             }
 
             is.push(name);
@@ -209,18 +209,21 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         let len = self
             .eval_partial(&fl.arr)?
-            .name()?
-            .field()?
-            .elements()?
+            .name()
+            .and_then(|n| n.field())
+            .and_then(|f| f.elements())
+            .ok_or(fl.arr.err(EErrorKind::NonArray))?
             .len();
 
         let mut start = None;
         for idx in 0..len {
             let elem = self
                 .eval_partial(&fl.arr)?
-                .name()?
-                .field()?
-                .get_element(idx)?;
+                .name()
+                .and_then(|n| n.field())
+                .ok_or(fl.arr.err(EErrorKind::NonArray))?
+                .get_element(idx)
+                .unwrap();
 
             let mut ss = Namespace::new();
             ss.insert(fl.elem, Name::Field(elem));
@@ -232,7 +235,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             let name = name_res?;
 
             if start.is_none() {
-                start = name.start();
+                start = Some(name.start());
             }
 
             is.push(name);
@@ -253,7 +256,10 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         params: &[ast::Expr],
     ) -> SResult<NameStruct> {
         if spec.formal_params.len() != params.len() {
-            return Err(SErrorKind::FormalActualMismatch);
+            return Err(SErrorKind::FormalActualMismatch(
+                spec.formal_params.len(),
+                params.len(),
+            ));
         }
 
         let mut static_space = Namespace::new();
@@ -309,7 +315,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             ast::Stmt::Constrain(exprs) => {
                 for expr in exprs {
                     if !self.eval_nonzero(expr)? {
-                        return Err(SErrorKind::FailedConstraint);
+                        return Err(SErrorKind::FailedConstraint(expr.span));
                     }
                 }
             }
@@ -367,11 +373,14 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 NameField::Struct(nst)
             }
             ast::FieldKind::Struct(spec_sym, args) => {
-                let name = self.scope.get(*spec_sym)?;
+                let name = self
+                    .scope
+                    .get(*spec_sym)
+                    .ok_or(SErrorKind::TypeNotFound(*spec_sym))?;
                 if let Name::Spec(spec) = name {
                     NameField::Struct(self.parse_struct(spec, &args)?)
                 } else {
-                    return Err(SErrorKind::InvalidType);
+                    return Err(SErrorKind::NonSpec(*spec_sym));
                 }
             }
             ast::FieldKind::Prim(apty) => {
@@ -392,10 +401,12 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             });
             let self_var = ast::Expr {
                 kind: ast::ExprKind::Variable(self.self_sym),
-                span: Span(0, 0),
+                span: self.traversed_fields.last().unwrap().0,
             };
-            let res = match constraint {
-                ast::Constraint::Generic(constr) => self.eval_nonzero(constr),
+            let (res, span) = match constraint {
+                ast::Constraint::Generic(constr) => {
+                    (self.eval_nonzero(constr), constr.span)
+                }
                 ast::Constraint::Binary(op, expr) => {
                     let cmp = ast::Expr {
                         kind: ast::ExprKind::Binary(
@@ -405,16 +416,17 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                         ),
                         span: expr.span,
                     };
-                    self.eval_nonzero(&cmp)
+                    (self.eval_nonzero(&cmp), cmp.span)
                 }
-                ast::Constraint::Zero(z) => {
-                    self.eval_nonzero(&self_var).map(|r| r ^ z)
-                }
+                ast::Constraint::Zero(z) => (
+                    self.eval_nonzero(&self_var).map(|r| r ^ z),
+                    self_var.span,
+                ),
             };
             self.scope.exit_selfscope();
 
             if !res? {
-                return Err(SErrorKind::FailedConstraint);
+                return Err(SErrorKind::FailedConstraint(span));
             }
         }
 

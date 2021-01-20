@@ -4,7 +4,6 @@ use crate::spec::ast;
 use crate::BuiltIn::*;
 use crate::SymbolTable;
 
-use super::error::{SErrorKind, SResult};
 use super::eval::{Partial, Val};
 use super::*;
 
@@ -77,57 +76,53 @@ pub enum NameFunc {
 }
 
 impl<'n> Name<'n> {
-    pub fn field(&self) -> SResult<&'n NameField> {
+    pub fn field(&self) -> Option<&'n NameField> {
         if let Self::Field(nf) = self {
-            Ok(nf)
+            Some(nf)
         } else {
-            Err(SErrorKind::NotAField)
+            None
         }
     }
 }
 
 impl NameField {
-    pub fn get_field(&self, sym: Sym) -> SResult<&NameField> {
+    pub fn get_field(&self, sym: Sym) -> Option<&NameField> {
         if let Self::Struct(st) = self {
-            st.fields
-                .get(&sym)
-                .ok_or(SErrorKind::IdentifierNotInScope(sym))
+            st.fields.get(&sym)
         } else {
-            Err(SErrorKind::NotAStruct)
+            panic!("not a field")
         }
     }
 
-    pub fn get_element(&self, idx: usize) -> SResult<&NameField> {
+    pub fn get_element(&self, idx: usize) -> Option<&NameField> {
         if let Self::Array(arr) = self {
-            arr.elements
-                .get(idx)
-                .ok_or(SErrorKind::IndexNotFound(idx as u64))
+            arr.elements.get(idx)
         } else {
-            Err(SErrorKind::NotAnArray)
+            panic!("not a struct")
         }
     }
 
-    pub fn elements(&self) -> SResult<&IndexSpace> {
+    pub fn elements(&self) -> Option<&IndexSpace> {
         if let Self::Array(arr) = self {
-            Ok(&arr.elements)
+            Some(&arr.elements)
         } else {
-            Err(SErrorKind::NotAnArray)
+            panic!("not an array")
         }
     }
 
-    pub fn start(&self) -> Option<BitPos> {
+    pub fn start(&self) -> BitPos {
         match self {
-            Self::Prim(ptr) => Some(ptr.start),
-            Self::Struct(nst) => Some(nst.start),
-            Self::Array(narr) => Some(narr.start),
+            Self::Prim(ptr) => ptr.start,
+            Self::Struct(nst) => nst.start,
+            Self::Array(narr) => narr.start,
         }
     }
 
-    pub fn size(&self) -> Option<BitSize> {
+    pub fn size(&self) -> BitSize {
         match self {
-            Self::Prim(ptr) => Some(ptr.pty.size()),
-            Self::Struct(nst) => Some(nst.size),
-            Self::Array(narr) => Some(narr.size),
+            Self::Prim(ptr) => ptr.pty.size(),
+            Self::Struct(nst) => nst.size,
+            Self::Array(narr) => narr.size,
         }
     }
 
@@ -135,7 +130,7 @@ impl NameField {
         if let Self::Struct(nst) = self {
             nst
         } else {
-            panic!()
+            panic!("not a struct")
         }
     }
 
@@ -143,7 +138,7 @@ impl NameField {
         if let Self::Struct(nst) = self {
             nst
         } else {
-            panic!()
+            panic!("not a struct")
         }
     }
 
@@ -151,7 +146,7 @@ impl NameField {
         if let Self::Struct(nst) = self {
             nst
         } else {
-            panic!()
+            panic!("not a struct")
         }
     }
 }
@@ -198,10 +193,10 @@ impl<'n> Scope<'n> {
     }
 
     pub fn base(&self) -> BitPos {
-        self.structs.last().unwrap().blocks[0].start().unwrap()
+        self.structs.last().unwrap().blocks[0].start()
     }
 
-    pub fn get(&self, sym: Sym) -> SResult<Name<'n>> {
+    pub fn get(&self, sym: Sym) -> Option<Name<'n>> {
         let current_struct = unsafe {
             std::mem::transmute::<&StructScope, &StructScope<'n>>(
                 self.structs.last().unwrap(),
@@ -209,7 +204,7 @@ impl<'n> Scope<'n> {
         };
 
         if sym == self.super_sym {
-            return Ok(Name::Field(&current_struct.blocks[0]));
+            return Some(Name::Field(&current_struct.blocks[0]));
         }
 
         /* check all local scopes within struct for variables */
@@ -219,7 +214,7 @@ impl<'n> Scope<'n> {
             .rev()
             .find_map(|s| s.get(sym))
         {
-            return Ok(*name);
+            return Some(*name);
         }
 
         /* check all local blocks for previous fields */
@@ -229,17 +224,17 @@ impl<'n> Scope<'n> {
             .rev()
             .find_map(|b| b.st().fields.get(&sym))
         {
-            return Ok(Name::Field(name));
+            return Some(Name::Field(name));
         }
 
         /* check all above structs for struct specs and parameters */
         for st in self.structs.iter().rev() {
             if let Some(name) = st.static_scope.get(sym) {
-                return Ok(*name);
+                return Some(*name);
             }
         }
 
-        Err(SErrorKind::IdentifierNotInScope(sym))
+        None
     }
 
     pub fn insert_local(&mut self, sym: Sym, part: Partial<'n>) {
@@ -270,8 +265,8 @@ impl<'n> Scope<'n> {
             .unwrap()
             .st_mut();
 
-        let start = nf.start().unwrap();
-        let size = nf.size().unwrap();
+        let start = nf.start();
+        let size = nf.size();
 
         if curr.fields.is_empty() {
             curr.start = start;
