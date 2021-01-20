@@ -213,7 +213,11 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .name()?
             .field()?
             .start()
-            .map(|a| Val::Integer((BytePos::from(a-self.scope.base())).size() as IntVal))
+            .map(|a| {
+                Val::Integer(
+                    (BytePos::from(a - self.scope.base())).size() as IntVal
+                )
+            })
             .ok_or(SErrorKind::InvalidType)
     }
 

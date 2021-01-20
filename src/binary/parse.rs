@@ -277,71 +277,73 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn parse_block(&mut self, block: &[ast::Stmt]) -> SResult<()> {
-        for s in block {
-            match s {
-                ast::Stmt::Field(f) => self.parse_field(&f)?,
-                ast::Stmt::Let(sym, expr) => {
-                    let part = self.eval_partial(expr)?;
-                    self.scope.insert_local(*sym, part);
-                }
-                ast::Stmt::If(if_stmt) => {
-                    let body = if self.eval_nonzero(&if_stmt.cond)? {
-                        &if_stmt.if_body
-                    } else {
-                        let mut i = 0;
-                        loop {
-                            if let Some((c, b)) = if_stmt.elseifs.get(i) {
-                                if self.eval_nonzero(c)? {
-                                    break b;
-                                }
-                                i += 1;
-                            } else {
-                                break &if_stmt.else_body;
-                            }
-                        }
-                    };
+        block.iter().map(|s| self.parse_statement(s)).collect()
+    }
 
-                    self.parse_block(body)?;
-                }
-                ast::Stmt::Constrain(exprs) => {
-                    for expr in exprs {
-                        if !self.eval_nonzero(expr)? {
-                            return Err(SErrorKind::FailedConstraint);
+    fn parse_statement(&mut self, stmt: &ast::Stmt) -> SResult<()> {
+        match stmt {
+            ast::Stmt::Field(f) => self.parse_field(&f)?,
+            ast::Stmt::Let(sym, expr) => {
+                let part = self.eval_partial(expr)?;
+                self.scope.insert_local(*sym, part);
+            }
+            ast::Stmt::If(if_stmt) => {
+                let body = if self.eval_nonzero(&if_stmt.cond)? {
+                    &if_stmt.if_body
+                } else {
+                    let mut i = 0;
+                    loop {
+                        if let Some((c, b)) = if_stmt.elseifs.get(i) {
+                            if self.eval_nonzero(c)? {
+                                break b;
+                            }
+                            i += 1;
+                        } else {
+                            break &if_stmt.else_body;
                         }
                     }
-                }
-                ast::Stmt::Debug(exprs) => {
-                    for expr in exprs {
-                        match self.eval_partial(expr)? {
-                            Partial::Name(name) => match name {
-                                Name::Field(nf) => {
-                                    if let Ok(sf) =
-                                        StructField::try_from(nf.clone())
-                                    {
-                                        view::view_structure(
-                                            self.f,
-                                            &mut std::io::stderr(),
-                                            &sf,
-                                            self.symtab,
-                                        )
-                                        .ok();
-                                    } else {
-                                        eprintln!("{{}}");
-                                    }
-                                }
-                                Name::Spec(_) => {
-                                    eprintln!("<struct specification>")
-                                }
-                                Name::Func(nfunc) => {
-                                    eprintln!("<function {:?}>", nfunc)
-                                }
-                                Name::Value(_) => unreachable!(),
-                            },
-                            Partial::Value(val) => eprintln!("{:?} ", val),
-                        }
+                };
+
+                self.parse_block(body)?;
+            }
+            ast::Stmt::Constrain(exprs) => {
+                for expr in exprs {
+                    if !self.eval_nonzero(expr)? {
+                        return Err(SErrorKind::FailedConstraint);
                     }
-                    eprintln!();
                 }
+            }
+            ast::Stmt::Debug(exprs) => {
+                for expr in exprs {
+                    match self.eval_partial(expr)? {
+                        Partial::Name(name) => match name {
+                            Name::Field(nf) => {
+                                if let Ok(sf) =
+                                    StructField::try_from(nf.clone())
+                                {
+                                    view::view_structure(
+                                        self.f,
+                                        &mut std::io::stderr(),
+                                        &sf,
+                                        self.symtab,
+                                    )
+                                    .ok();
+                                } else {
+                                    eprintln!("{{}}");
+                                }
+                            }
+                            Name::Spec(_) => {
+                                eprintln!("<struct specification>")
+                            }
+                            Name::Func(nfunc) => {
+                                eprintln!("<function {:?}>", nfunc)
+                            }
+                            Name::Value(_) => unreachable!(),
+                        },
+                        Partial::Value(val) => eprintln!("{:?} ", val),
+                    }
+                }
+                eprintln!();
             }
         }
 
