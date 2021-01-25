@@ -1,5 +1,6 @@
 use crate::{AddrBase, Order, SpannedSym, Sym};
 
+use super::lex::LitKind;
 use super::Span;
 
 /* Structs/blocks */
@@ -121,7 +122,7 @@ pub enum ExprKind {
     Member(Box<Expr>, SpannedSym),
     Index(Box<Expr>, Box<Expr>),
 
-    Literal(super::lex::LitKind),
+    Literal(LitKind),
     Property(Box<Expr>, SpannedSym),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Unary(UnOp, Box<Expr>),
@@ -176,6 +177,15 @@ impl UnOp {
     pub fn fixity(self) -> u8 {
         match self {
             UnOp::Neg | UnOp::Not => 22,
+        }
+    }
+}
+
+impl Expr {
+    pub fn int(val: i64, span: Span) -> Self {
+        Expr {
+            kind: ExprKind::Literal(LitKind::Int(val)),
+            span,
         }
     }
 }

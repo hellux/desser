@@ -132,9 +132,10 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     .and_then(|n| n.field())
                     .ok_or_else(|| st.err(EErrorKind::NonStruct))?;
                 Partial::Name(Name::Field(
-                    struct_name.get_field(mem.sym).ok_or_else(|| {
-                        EError(mem.span, EErrorKind::MemberNotFound(mem.sym))
-                    })?,
+                    struct_name.get_field(mem.sym).ok_or(EError(
+                        mem.span,
+                        EErrorKind::MemberNotFound(mem.sym),
+                    ))?,
                 ))
             }
             ExprKind::Index(arr, idx_expr) => {
@@ -189,9 +190,10 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         expr: &'a Expr,
         prop: SpannedSym,
     ) -> EResult<Val> {
-        let bi = self.symtab.to_builtin(prop.sym).ok_or_else(|| {
-            EError(prop.span, EErrorKind::NotAProperty(prop.sym))
-        })?;
+        let bi = self
+            .symtab
+            .to_builtin(prop.sym)
+            .ok_or(EError(prop.span, EErrorKind::NotAProperty(prop.sym)))?;
         match bi {
             PropStart => self.property_start(expr),
             PropSize => self.property_size(expr),

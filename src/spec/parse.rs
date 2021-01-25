@@ -5,8 +5,8 @@ use crate::{
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
 use super::lex::{
-    Attr, BinConstr, Delim, DelimNode, Keyword, LitKind, Symbol, TokKind,
-    TokTree, Token, TokenStream,
+    Attr, BinConstr, Delim, DelimNode, Keyword, Symbol, TokKind, TokTree,
+    Token, TokenStream,
 };
 use super::Span;
 
@@ -679,35 +679,15 @@ impl Parser {
                     if let TokKind::Symbol(s) = t.kind {
                         match s {
                             Symbol::Question => ast::ArraySize::Within(
-                                ast::Expr {
-                                    kind: ast::ExprKind::Literal(
-                                        LitKind::Int(0),
-                                    ),
-                                    span,
-                                },
-                                ast::Expr {
-                                    kind: ast::ExprKind::Literal(
-                                        LitKind::Int(1),
-                                    ),
-                                    span,
-                                },
+                                ast::Expr::int(0, span),
+                                ast::Expr::int(1, span),
                             ),
-                            Symbol::Plus => {
-                                ast::ArraySize::AtLeast(ast::Expr {
-                                    kind: ast::ExprKind::Literal(
-                                        LitKind::Int(1),
-                                    ),
-                                    span,
-                                })
-                            }
-                            Symbol::Star => {
-                                ast::ArraySize::AtLeast(ast::Expr {
-                                    kind: ast::ExprKind::Literal(
-                                        LitKind::Int(0),
-                                    ),
-                                    span,
-                                })
-                            }
+                            Symbol::Plus => ast::ArraySize::AtLeast(
+                                ast::Expr::int(1, span),
+                            ),
+                            Symbol::Star => ast::ArraySize::AtLeast(
+                                ast::Expr::int(0, span),
+                            ),
                             _ => unreachable!(),
                         }
                     } else {
@@ -736,10 +716,7 @@ impl Parser {
                 }
             }
         } else {
-            ast::ArraySize::AtLeast(ast::Expr {
-                kind: ast::ExprKind::Literal(LitKind::Int(0)),
-                span: self.span,
-            })
+            ast::ArraySize::AtLeast(ast::Expr::int(0, self.span))
         };
 
         Ok(ast::StdArray {
