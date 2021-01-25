@@ -256,7 +256,7 @@ impl<'n> Scope<'n> {
             |sym| sym,
         );
 
-        let curr = &mut self
+        let curr = self
             .structs
             .last_mut()
             .unwrap()

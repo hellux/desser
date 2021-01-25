@@ -117,7 +117,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn eval(&mut self, expr: &ast::Expr) -> EResult<Val> {
-        eval::eval(expr, self.f, &self.scope).map_err(|e| e.into())
+        eval::eval(expr, self.f, &self.scope)
     }
 
     fn eval_size(&mut self, expr: &ast::Expr) -> EResult<IntVal> {
@@ -211,8 +211,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             .eval_partial(&fl.arr)?
             .name()
             .and_then(|n| n.field())
-            .and_then(|f| f.elements())
-            .ok_or(fl.arr.err(EErrorKind::NonArray))?
+            .and_then(NameField::elements)
+            .ok_or_else(|| fl.arr.err(EErrorKind::NonArray))?
             .len();
 
         let mut start = None;
@@ -221,7 +221,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 .eval_partial(&fl.arr)?
                 .name()
                 .and_then(|n| n.field())
-                .ok_or(fl.arr.err(EErrorKind::NonArray))?
+                .ok_or_else(|| fl.arr.err(EErrorKind::NonArray))?
                 .get_element(idx)
                 .unwrap();
 

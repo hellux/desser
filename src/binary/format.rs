@@ -72,7 +72,7 @@ fn le8_to_uint(data: &[u8]) -> u64 {
 }
 
 impl PrimType {
-    fn eval(&self, data: &[u8]) -> Val {
+    fn eval(self, data: &[u8]) -> Val {
         match self {
             PrimType::BitVec(_) => Val::Integer(le8_to_uint(data) as IntVal),
             PrimType::Char | PrimType::U8 => Val::Integer(u8::from_le_bytes(

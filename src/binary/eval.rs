@@ -90,7 +90,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             | ExprKind::Member(_, _)
             | ExprKind::Index(_, _) => self.eval_partial(expr).and_then(|p| {
                 self.eval_name(p.name().unwrap())
-                    .ok_or(expr.err(EErrorKind::NonValue))
+                    .ok_or_else(|| expr.err(EErrorKind::NonValue))
             }),
             ExprKind::Literal(kind) => match kind {
                 LitKind::Int(i) => Ok(Val::Integer(*i)),
@@ -111,21 +111,21 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
 
     fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial<'a>> {
         Ok(match &expr.kind {
-            ExprKind::Variable(sym) => Partial::Name(
-                self.scope
-                    .get(*sym)
-                    .ok_or(expr.err(EErrorKind::IdentifierNotFound(*sym)))?,
-            ),
+            ExprKind::Variable(sym) => {
+                Partial::Name(self.scope.get(*sym).ok_or_else(|| {
+                    expr.err(EErrorKind::IdentifierNotFound(*sym))
+                })?)
+            }
             ExprKind::Member(st, sym) => {
                 let struct_name = self
                     .eval_partial(&st)?
                     .name()
                     .and_then(|n| n.field())
-                    .ok_or(st.err(EErrorKind::NonStruct))?;
+                    .ok_or_else(|| st.err(EErrorKind::NonStruct))?;
                 Partial::Name(Name::Field(
-                    struct_name
-                        .get_field(*sym)
-                        .ok_or(expr.err(EErrorKind::MemberNotFound(*sym)))?,
+                    struct_name.get_field(*sym).ok_or_else(|| {
+                        expr.err(EErrorKind::MemberNotFound(*sym))
+                    })?,
                 ))
             }
             ExprKind::Index(arr, idx_expr) => {
@@ -133,20 +133,20 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     .eval_partial(&arr)?
                     .name()
                     .and_then(|n| n.field())
-                    .ok_or(arr.err(EErrorKind::NonArray))?;
+                    .ok_or_else(|| arr.err(EErrorKind::NonArray))?;
                 let idx = self.eval(&idx_expr)?;
-                let i = idx
-                    .int()
-                    .ok_or(idx_expr.err(EErrorKind::NonIntegerIndex))?;
+                let i = idx.int().ok_or_else(|| {
+                    idx_expr.err(EErrorKind::NonIntegerIndex)
+                })?;
                 let u = if i >= 0 {
                     i as usize
                 } else {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
                 Partial::Name(Name::Field(
-                    arr_name
-                        .get_element(u)
-                        .ok_or(expr.err(EErrorKind::ElementNotFound(u)))?,
+                    arr_name.get_element(u).ok_or_else(|| {
+                        expr.err(EErrorKind::ElementNotFound(u))
+                    })?,
                 ))
             }
             _ => Partial::Value(self.eval(expr)?),
@@ -179,7 +179,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         if let Name::Func(nfunc) = self
             .eval_partial(func)?
             .name()
-            .ok_or(func.err(EErrorKind::NonFunction))?
+            .ok_or_else(|| func.err(EErrorKind::NonFunction))?
         {
             match (nfunc, args) {
                 (NameFunc::AddrOf, [lval]) => self.eval_addrof(lval),
@@ -198,7 +198,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         self.eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
-            .ok_or(expr.err(EErrorKind::NonField))
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
             .map(|nf| Val::Integer(BytePos::from(nf.start()).size() as IntVal))
     }
 
@@ -207,14 +207,14 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
-            .ok_or(expr.err(EErrorKind::NonField))
-            .map(|nf| nf.start())?;
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
+            .map(NameField::start)?;
         let size = self
             .eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
-            .ok_or(expr.err(EErrorKind::NonField))
-            .map(|nf| nf.size())?;
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
+            .map(NameField::size)?;
         Ok(Val::Integer(
             ByteSize::from_unaligned(start, size).size() as IntVal
         ))
@@ -225,14 +225,14 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
-            .ok_or(expr.err(EErrorKind::NonField))
-            .map(|nf| nf.start())?;
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
+            .map(NameField::start)?;
         let size = self
             .eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
-            .ok_or(expr.err(EErrorKind::NonField))
-            .map(|nf| nf.size())?;
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
+            .map(NameField::start)?;
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
@@ -240,7 +240,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         self.eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
-            .ok_or(expr.err(EErrorKind::NonField))
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
             .map(|nf| {
                 Val::Integer(
                     (BytePos::from(nf.start() - self.scope.base())).size()
@@ -286,10 +286,9 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 eval_binary_bytes(op, &left.bytes(), &r)
             }
         }
-        .ok_or(EError(
-            lhs.span.merge(rhs.span),
-            EErrorKind::BinaryTypeError,
-        ))
+        .ok_or_else(|| {
+            EError(lhs.span.merge(rhs.span), EErrorKind::BinaryTypeError)
+        })
     }
 
     fn eval_unary(&mut self, op: UnOp, lhs: &'a Expr) -> EResult<Val> {
