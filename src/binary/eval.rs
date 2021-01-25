@@ -1,25 +1,30 @@
 use std::io::{Read, Seek};
 
-use super::error::{EError, EErrorKind, EResult};
-use super::scope::{Name, NameArray, NameField, NameFunc, NameStruct, Scope};
-use super::*;
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
 use crate::spec::LitKind;
+use crate::BuiltIn::*;
+use crate::SpannedSym;
+
+use super::error::{EError, EErrorKind, EResult};
+use super::scope::{Name, NameArray, NameField, NameStruct, Scope};
+use super::*;
 
 pub(super) fn eval<'a, R: Read + Seek>(
     expr: &'a Expr,
     f: &mut R,
     scope: &Scope,
+    symtab: &'a SymbolTable,
 ) -> EResult<Val> {
-    Eval::new(f, scope).eval(expr)
+    Eval::new(f, scope, symtab).eval(expr)
 }
 
 pub(super) fn eval_partial<'a, R: Read + Seek>(
     expr: &'a Expr,
     f: &'a mut R,
     scope: &'a Scope<'a>,
+    symtab: &'a SymbolTable,
 ) -> EResult<Partial<'a>> {
-    Eval::new(f, scope).eval_partial(expr)
+    Eval::new(f, scope, symtab).eval_partial(expr)
 }
 
 pub type IntVal = i64;
@@ -77,11 +82,16 @@ impl Val {
 struct Eval<'a, R: Read + Seek> {
     f: &'a mut R,
     scope: &'a Scope<'a>,
+    symtab: &'a SymbolTable,
 }
 
 impl<'a, R: Read + Seek> Eval<'a, R> {
-    fn new(f: &'a mut R, scope: &'a Scope<'a>) -> Self {
-        Eval { f, scope }
+    fn new(
+        f: &'a mut R,
+        scope: &'a Scope<'a>,
+        symtab: &'a SymbolTable,
+    ) -> Self {
+        Eval { f, scope, symtab }
     }
 
     fn eval(&mut self, expr: &'a Expr) -> EResult<Val> {
@@ -100,8 +110,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     ByteSize(bytes.len() as u64).into(),
                 )),
             },
-            ExprKind::Call(func, args) => self.eval_call(func, args),
-            ExprKind::AddrOf(obj) => self.eval_addrof(obj),
+            ExprKind::Property(expr, prop) => self.eval_property(expr, *prop),
             ExprKind::Binary(op, lhs, rhs) => {
                 self.eval_binary(*op, &lhs, &rhs)
             }
@@ -116,15 +125,15 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     expr.err(EErrorKind::IdentifierNotFound(*sym))
                 })?)
             }
-            ExprKind::Member(st, sym) => {
+            ExprKind::Member(st, mem) => {
                 let struct_name = self
                     .eval_partial(&st)?
                     .name()
                     .and_then(|n| n.field())
                     .ok_or_else(|| st.err(EErrorKind::NonStruct))?;
                 Partial::Name(Name::Field(
-                    struct_name.get_field(*sym).ok_or_else(|| {
-                        expr.err(EErrorKind::MemberNotFound(*sym))
+                    struct_name.get_field(mem.sym).ok_or_else(|| {
+                        EError(mem.span, EErrorKind::MemberNotFound(mem.sym))
                     })?,
                 ))
             }
@@ -175,26 +184,25 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         })
     }
 
-    fn eval_call(&mut self, func: &'a Expr, args: &'a [Expr]) -> EResult<Val> {
-        if let Name::Func(nfunc) = self
-            .eval_partial(func)?
-            .name()
-            .ok_or_else(|| func.err(EErrorKind::NonFunction))?
-        {
-            match (nfunc, args) {
-                (NameFunc::AddrOf, [lval]) => self.eval_addrof(lval),
-                (NameFunc::SizeOf, [lval]) => self.eval_sizeof(lval),
-                (NameFunc::EndOf, [lval]) => self.eval_endof(lval),
-                (NameFunc::OffsOf, [lval]) => self.eval_offsof(lval),
-                (NameFunc::Len, [lval]) => self.eval_len(lval),
-                _ => Err(func.err(EErrorKind::ArgumentMismatch)),
-            }
-        } else {
-            Err(func.err(EErrorKind::NonFunction))
+    fn eval_property(
+        &mut self,
+        expr: &'a Expr,
+        prop: SpannedSym,
+    ) -> EResult<Val> {
+        let bi = self.symtab.to_builtin(prop.sym).ok_or_else(|| {
+            EError(prop.span, EErrorKind::NotAProperty(prop.sym))
+        })?;
+        match bi {
+            PropStart => self.property_start(expr),
+            PropSize => self.property_size(expr),
+            PropEnd => self.property_end(expr),
+            PropOffset => self.property_offset(expr),
+            PropLength => self.property_length(expr),
+            _ => Err(EError(prop.span, EErrorKind::NotAProperty(prop.sym))),
         }
     }
 
-    fn eval_addrof(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn property_start(&mut self, expr: &'a Expr) -> EResult<Val> {
         self.eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
@@ -202,7 +210,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .map(|nf| Val::Integer(BytePos::from(nf.start()).size() as IntVal))
     }
 
-    fn eval_sizeof(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn property_size(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self
             .eval_partial(expr)?
             .name()
@@ -220,7 +228,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         ))
     }
 
-    fn eval_endof(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn property_end(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self
             .eval_partial(expr)?
             .name()
@@ -232,11 +240,11 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .name()
             .and_then(|n| n.field())
             .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(NameField::start)?;
+            .map(NameField::size)?;
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
-    fn eval_offsof(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn property_offset(&mut self, expr: &'a Expr) -> EResult<Val> {
         self.eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
@@ -249,7 +257,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             })
     }
 
-    fn eval_len(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn property_length(&mut self, expr: &'a Expr) -> EResult<Val> {
         if let Some(NameField::Array(narr)) =
             self.eval_partial(expr)?.name().and_then(|n| n.field())
         {

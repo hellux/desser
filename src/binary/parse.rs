@@ -117,7 +117,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn eval(&mut self, expr: &ast::Expr) -> EResult<Val> {
-        eval::eval(expr, self.f, &self.scope)
+        eval::eval(expr, self.f, &self.scope, &self.symtab)
     }
 
     fn eval_size(&mut self, expr: &ast::Expr) -> EResult<IntVal> {
@@ -144,7 +144,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn eval_partial(&mut self, expr: &ast::Expr) -> SResult<Partial<'s>> {
-        let part = eval::eval_partial(expr, self.f, &self.scope)?;
+        let part =
+            eval::eval_partial(expr, self.f, &self.scope, &self.symtab)?;
         // name is never removed and namespace outlives 's
         // FIXME: variable can actually be overwritten and thus removed
         Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
@@ -341,9 +342,6 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                             Name::Spec(_) => {
                                 eprintln!("<struct specification>")
                             }
-                            Name::Func(nfunc) => {
-                                eprintln!("<function {:?}>", nfunc)
-                            }
                             Name::Value(_) => unreachable!(),
                         },
                         Partial::Value(val) => eprintln!("{:?} ", val),
@@ -375,7 +373,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             ast::FieldKind::Struct(spec_sym, args) => {
                 let name = self
                     .scope
-                    .get(*spec_sym)
+                    .get(spec_sym.sym)
                     .ok_or(SErrorKind::TypeNotFound(*spec_sym))?;
                 if let Name::Spec(spec) = name {
                     NameField::Struct(self.parse_struct(spec, &args)?)

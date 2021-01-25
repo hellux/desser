@@ -1,4 +1,6 @@
-use crate::{AddrBase, BuiltIn, Error, ErrorType, Order, Sym, SymbolTable};
+use crate::{
+    AddrBase, BuiltIn, Error, ErrorType, Order, SpannedSym, Sym, SymbolTable,
+};
 
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
@@ -559,6 +561,10 @@ impl Parser {
                 kind: TokKind::Ident(id),
                 ..
             }) => {
+                let ssym = SpannedSym {
+                    span: self.span,
+                    sym: id,
+                };
                 let params = match stream.peek() {
                     Some(TokTree::Delim(dn)) if dn.delim == Paren => {
                         self.eat(stream)?;
@@ -587,10 +593,10 @@ impl Parser {
                         };
                         kind
                     } else {
-                        ast::FieldKind::Struct(id, params)
+                        ast::FieldKind::Struct(ssym, params)
                     }
                 } else {
-                    ast::FieldKind::Struct(id, params)
+                    ast::FieldKind::Struct(ssym, params)
                 };
 
                 kind
@@ -836,7 +842,11 @@ impl Parser {
                         kind: lhs_kind,
                         span: lhs_span,
                     };
-                    lhs_kind = ast::ExprKind::Member(Box::new(st), sym);
+                    let ssym = SpannedSym {
+                        span: self.span,
+                        sym,
+                    };
+                    lhs_kind = ast::ExprKind::Member(Box::new(st), ssym);
                 }
                 TokTree::Delim(dn) if dn.delim == Bracket => {
                     self.eat(stream)?; // bracket delim
@@ -849,15 +859,22 @@ impl Parser {
                     lhs_kind =
                         ast::ExprKind::Index(Box::new(arr), Box::new(index));
                 }
-                TokTree::Delim(dn) if dn.delim == Paren => {
-                    self.eat(stream)?; // paren delim
-                    let dn = self.expect_delim()?;
-                    let args = self.parse_expr_list(dn.stream)?;
-                    let func = ast::Expr {
+                TokTree::Token(Token {
+                    kind: TokKind::Symbol(s),
+                    ..
+                }) if *s == Symbol::Apostrophe => {
+                    self.eat(stream)?; // apostrophe
+                    self.eat(stream)?; // id
+                    let prop = self.expect_ident()?;
+                    let expr = ast::Expr {
                         kind: lhs_kind,
                         span: lhs_span,
                     };
-                    lhs_kind = ast::ExprKind::Call(Box::new(func), args);
+                    let ssym = SpannedSym {
+                        span: self.span,
+                        sym: prop,
+                    };
+                    lhs_kind = ast::ExprKind::Property(Box::new(expr), ssym);
                 }
                 TokTree::Token(Token {
                     kind: TokKind::Symbol(s),

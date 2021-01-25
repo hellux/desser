@@ -115,28 +115,42 @@ pub enum ErrorType {
 }
 
 pub type Sym = u16;
+#[derive(Copy, Clone, Debug)]
+pub struct SpannedSym {
+    sym: Sym,
+    span: Span,
+}
 
 #[derive(Copy, Clone, Debug)]
 enum BuiltIn {
     IdentSelf,
     IdentSuper,
-    FuncLen,
-    FuncAddrOf,
-    FuncSizeOf,
-    FuncEndOf,
-    FuncOffsOf,
+    PropLength,
+    PropStart,
+    PropSize,
+    PropEnd,
+    PropOffset,
 }
+const BUILTINS: [BuiltIn; 7] = [
+    BuiltIn::IdentSelf,
+    BuiltIn::IdentSuper,
+    BuiltIn::PropLength,
+    BuiltIn::PropStart,
+    BuiltIn::PropSize,
+    BuiltIn::PropEnd,
+    BuiltIn::PropOffset,
+];
 
 impl BuiltIn {
     fn name(&self) -> &str {
         match self {
             Self::IdentSelf => "self",
             Self::IdentSuper => "super",
-            Self::FuncLen => "len",
-            Self::FuncAddrOf => "addrof",
-            Self::FuncSizeOf => "sizeof",
-            Self::FuncEndOf => "endof",
-            Self::FuncOffsOf => "offsof",
+            Self::PropLength => "length",
+            Self::PropStart => "start",
+            Self::PropSize => "size",
+            Self::PropEnd => "end",
+            Self::PropOffset => "offset",
         }
     }
 }
@@ -154,13 +168,9 @@ impl SymbolTable {
             arr: Vec::new(),
         };
 
-        tbl.insert(BuiltIn::IdentSelf.name());
-        tbl.insert(BuiltIn::IdentSuper.name());
-        tbl.insert(BuiltIn::FuncLen.name());
-        tbl.insert(BuiltIn::FuncAddrOf.name());
-        tbl.insert(BuiltIn::FuncSizeOf.name());
-        tbl.insert(BuiltIn::FuncEndOf.name());
-        tbl.insert(BuiltIn::FuncOffsOf.name());
+        for bi in BUILTINS.iter() {
+            tbl.insert(bi.name());
+        }
 
         tbl
     }
@@ -182,5 +192,9 @@ impl SymbolTable {
 
     fn builtin(&self, b: BuiltIn) -> Sym {
         *self.map.get(b.name()).unwrap()
+    }
+
+    fn to_builtin(&self, sym: Sym) -> Option<BuiltIn> {
+        BUILTINS.get(sym as usize).copied()
     }
 }

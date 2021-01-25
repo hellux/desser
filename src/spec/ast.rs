@@ -1,4 +1,4 @@
-use crate::{AddrBase, Order, Sym};
+use crate::{AddrBase, Order, SpannedSym, Sym};
 
 use super::Span;
 
@@ -75,7 +75,7 @@ pub enum Constraint {
 pub enum FieldKind {
     Prim(PrimType),
     Array(Array),
-    Struct(Sym, Vec<Expr>),
+    Struct(SpannedSym, Vec<Expr>),
     Block(Block),
 }
 
@@ -117,16 +117,12 @@ pub struct Expr {
 
 #[derive(Clone, Debug)]
 pub enum ExprKind {
-    // lvalue
     Variable(Sym),
-    Member(Box<Expr>, Sym),
+    Member(Box<Expr>, SpannedSym),
     Index(Box<Expr>, Box<Expr>),
 
-    // rvalue
     Literal(super::lex::LitKind),
-    //Array(Vec<Expr>),
-    Call(Box<Expr>, Vec<Expr>),
-    AddrOf(Box<Expr>),
+    Property(Box<Expr>, SpannedSym),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Unary(UnOp, Box<Expr>),
 }

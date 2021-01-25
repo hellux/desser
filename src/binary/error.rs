@@ -1,13 +1,13 @@
 use crate::spec::ast::Expr;
-use crate::{Error, ErrorType, Span, Sym, SymbolTable};
+use crate::{Error, ErrorType, Span, SpannedSym, Sym, SymbolTable};
 
 use super::bits::*;
 use super::eval::IntVal;
 
 #[derive(Debug)]
 pub enum SErrorKind {
-    TypeNotFound(Sym),
-    NonSpec(Sym),
+    TypeNotFound(SpannedSym),
+    NonSpec(SpannedSym),
     FormalActualMismatch(usize, usize),
     NonPositiveAlignment(IntVal),
     EndOfFile(BitSize),
@@ -23,6 +23,7 @@ pub enum EErrorKind {
     IdentifierNotFound(Sym),
     MemberNotFound(Sym),
     ElementNotFound(usize),
+    NotAProperty(Sym),
     ArgumentMismatch,
     BinaryTypeError,
     UnaryCompound,
@@ -62,9 +63,9 @@ pub struct SError {
 impl Error {
     pub fn from(mut s: SError, symtab: &SymbolTable) -> Self {
         let desc = match &s.kind {
-            SErrorKind::TypeNotFound(sym) => format!(
+            SErrorKind::TypeNotFound(ssym) => format!(
                 "type '{}' not found",
-                String::from(symtab.name(*sym).unwrap()),
+                String::from(symtab.name(ssym.sym).unwrap()),
             ),
             SErrorKind::EndOfFile(size) => {
                 format!("end of file reached at {}", size)
@@ -77,6 +78,8 @@ impl Error {
         let hint = None;
 
         let span = match s.kind {
+            SErrorKind::TypeNotFound(ssym) => ssym.span,
+            SErrorKind::NonSpec(ssym) => ssym.span,
             SErrorKind::Expr(e) => e.0,
             SErrorKind::FailedConstraint(sp) => sp,
             _ => s.backtrace.pop().unwrap().0,

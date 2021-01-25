@@ -19,6 +19,7 @@ pub enum Symbol {
     Exclamation,
     Question,
     Tilde,
+    Apostrophe,
 
     Eq,
     Lt,
@@ -115,6 +116,11 @@ impl<'a> Cursor<'a> {
         self.chars.clone().next().unwrap_or('\0')
     }
 
+    /// Peek at nth char without consuming it.
+    fn peekn(&self, n: usize) -> char {
+        self.chars.clone().nth(n).unwrap_or('\0')
+    }
+
     /// Move to the next character.
     fn eat(&mut self) -> Option<char> {
         Some(self.chars.next()?)
@@ -144,9 +150,15 @@ impl Cursor<'_> {
                 _ => Sym(Slash),
             },
 
-            '\'' => Literal(Char {
-                closed: self.eat_string('\''),
-            }),
+            '\'' => {
+                if self.peek() == '\\' || self.peekn(2) == '\'' {
+                    Literal(Char {
+                        closed: self.eat_string('\''),
+                    })
+                } else {
+                    Sym(Apostrophe)
+                }
+            }
             '"' => Literal(Str {
                 closed: self.eat_string('"'),
             }),

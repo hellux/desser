@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::spec::ast;
-use crate::BuiltIn::*;
+use crate::BuiltIn;
 use crate::SymbolTable;
 
 use super::eval::{Partial, Val};
@@ -54,7 +54,6 @@ pub(super) enum Name<'n> {
     Value(&'n Val),
     Field(&'n NameField),
     Spec(&'n ast::Struct),
-    Func(NameFunc),
 }
 
 #[derive(Clone, Debug)]
@@ -65,15 +64,6 @@ pub(super) enum NameField {
 }
 pub(super) type NameStruct = StructT<FieldSpace>;
 pub(super) type NameArray = ArrayT<IndexSpace>;
-
-#[derive(Copy, Clone, Debug)]
-pub enum NameFunc {
-    AddrOf,
-    SizeOf,
-    EndOf,
-    OffsOf,
-    Len,
-}
 
 impl<'n> Name<'n> {
     pub fn field(&self) -> Option<&'n NameField> {
@@ -168,15 +158,8 @@ pub(super) struct Scope<'n> {
 
 impl<'n> Scope<'n> {
     pub fn new(file_length: BitSize, st: &mut SymbolTable) -> Self {
-        let mut ns = Namespace::new();
-        ns.insert(st.builtin(FuncLen), Name::Func(NameFunc::Len));
-        ns.insert(st.builtin(FuncAddrOf), Name::Func(NameFunc::AddrOf));
-        ns.insert(st.builtin(FuncSizeOf), Name::Func(NameFunc::SizeOf));
-        ns.insert(st.builtin(FuncEndOf), Name::Func(NameFunc::EndOf));
-        ns.insert(st.builtin(FuncOffsOf), Name::Func(NameFunc::OffsOf));
-
         let builtins = StructScope {
-            static_scope: ns,
+            static_scope: Namespace::new(),
             local_scopes: vec![Namespace::new()],
             blocks: vec![NameField::Struct(NameStruct {
                 start: BitPos::new(0),
@@ -186,8 +169,8 @@ impl<'n> Scope<'n> {
         };
         Scope {
             structs: vec![builtins],
-            self_sym: st.builtin(IdentSelf),
-            super_sym: st.builtin(IdentSuper),
+            self_sym: st.builtin(BuiltIn::IdentSelf),
+            super_sym: st.builtin(BuiltIn::IdentSuper),
             unnamed: Sym::max_value(),
         }
     }
