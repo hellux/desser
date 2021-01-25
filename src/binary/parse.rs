@@ -147,7 +147,6 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         let part =
             eval::eval_partial(expr, self.f, &self.scope, &self.symtab)?;
         // name is never removed and namespace outlives 's
-        // FIXME: variable can actually be overwritten and thus removed
         Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
     }
 
@@ -447,16 +446,6 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
     fn convert_prim(&mut self, apty: &ast::PrimType) -> SResult<PrimType> {
         Ok(match apty {
-            //        ast::PrimType::Signed(len) => {
-            //            PrimType::Signed(self.eval(&len)? as u8)
-            //        }
-            //        ast::PrimType::Unsigned(len) => {
-            //            PrimType::Unsigned(self.eval(&len)? as u8)
-            //        }
-            //        ast::PrimType::Float(exponent, mantissa) => PrimType::Float(
-            //            self.eval(&exponent)? as u8,
-            //            self.eval(&mantissa)? as u8,
-            //        ),
             ast::PrimType::BitVec(len) => {
                 PrimType::BitVec(self.eval_size(&len)? as u8)
             }
