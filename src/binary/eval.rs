@@ -126,24 +126,16 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 })?)
             }
             ExprKind::Member(st, mem) => {
-                let struct_name = self
-                    .eval_partial(&st)?
-                    .name()
-                    .and_then(|n| n.field())
-                    .ok_or_else(|| st.err(EErrorKind::NonStruct))?;
+                let struct_nf = self.expect_nf(&st)?;
                 Partial::Name(Name::Field(
-                    struct_name.get_field(mem.sym).ok_or(EError(
+                    struct_nf.get_field(mem.sym).ok_or(EError(
                         mem.span,
                         EErrorKind::MemberNotFound(mem.sym),
                     ))?,
                 ))
             }
             ExprKind::Index(arr, idx_expr) => {
-                let arr_name = self
-                    .eval_partial(&arr)?
-                    .name()
-                    .and_then(|n| n.field())
-                    .ok_or_else(|| arr.err(EErrorKind::NonArray))?;
+                let arr_nf = self.expect_nf(arr)?;
                 let idx = self.eval(&idx_expr)?;
                 let i = idx.int().ok_or_else(|| {
                     idx_expr.err(EErrorKind::NonIntegerIndex)
@@ -154,7 +146,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
                 Partial::Name(Name::Field(
-                    arr_name.get_element(u).ok_or_else(|| {
+                    arr_nf.get_element(u).ok_or_else(|| {
                         expr.err(EErrorKind::ElementNotFound(u))
                     })?,
                 ))
@@ -185,6 +177,13 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         })
     }
 
+    fn expect_nf(&mut self, expr: &'a Expr) -> EResult<&'a NameField> {
+        self.eval_partial(expr)?
+            .name()
+            .and_then(|n| n.field())
+            .ok_or_else(|| expr.err(EErrorKind::NonField))
+    }
+
     fn eval_property(
         &mut self,
         expr: &'a Expr,
@@ -205,64 +204,31 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn property_start(&mut self, expr: &'a Expr) -> EResult<Val> {
-        self.eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
-            .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(|nf| Val::Integer(BytePos::from(nf.start()).size() as IntVal))
+        let start = self.expect_nf(expr)?.start();
+        Ok(Val::Integer(BytePos::from(start).size() as IntVal))
     }
 
     fn property_size(&mut self, expr: &'a Expr) -> EResult<Val> {
-        let start = self
-            .eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
-            .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(NameField::start)?;
-        let size = self
-            .eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
-            .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(NameField::size)?;
+        let start = self.expect_nf(expr)?.start();
+        let size = self.expect_nf(expr)?.size();
         Ok(Val::Integer(
             ByteSize::from_unaligned(start, size).size() as IntVal
         ))
     }
 
     fn property_end(&mut self, expr: &'a Expr) -> EResult<Val> {
-        let start = self
-            .eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
-            .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(NameField::start)?;
-        let size = self
-            .eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
-            .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(NameField::size)?;
+        let start = self.expect_nf(expr)?.start();
+        let size = self.expect_nf(expr)?.size();
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
     fn property_offset(&mut self, expr: &'a Expr) -> EResult<Val> {
-        self.eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
-            .ok_or_else(|| expr.err(EErrorKind::NonField))
-            .map(|nf| {
-                Val::Integer(
-                    (BytePos::from(nf.start() - self.scope.base())).size()
-                        as IntVal,
-                )
-            })
+        let offset = self.expect_nf(expr)?.start() - self.scope.base();
+        Ok(Val::Integer(BytePos::from(offset).size() as IntVal))
     }
 
     fn property_length(&mut self, expr: &'a Expr) -> EResult<Val> {
-        if let Some(NameField::Array(narr)) =
-            self.eval_partial(expr)?.name().and_then(|n| n.field())
-        {
+        if let NameField::Array(narr) = self.expect_nf(expr)? {
             Ok(Val::Integer(narr.elements.len() as IntVal))
         } else {
             Err(expr.err(EErrorKind::NonArray))
