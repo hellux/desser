@@ -1,36 +1,24 @@
 use std::str::Chars;
 
 use self::LiteralKind::*;
+use self::Symbol::*;
 use self::TokenKind::*;
 
-#[derive(Clone, Copy, Debug)]
-pub enum TokenKind {
-    LineComment,
-    BlockComment { closed: bool },
-    Whitespace,
-
-    OpenParen,
-    CloseParen,
-    OpenBrace,
-    CloseBrace,
-    OpenBracket,
-    CloseBracket,
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum Symbol {
     SemiColon,
     Comma,
+
     Dot,
-
-    Literal(LiteralKind),
-    Ident,
-
-    Minus,
     Plus,
+    Minus,
     Star,
+    Slash,
+    Percentage,
+    Caret,
     Exclamation,
     Question,
-    Slash,
-    Caret,
     Tilde,
-    Percentage,
 
     Eq,
     Lt,
@@ -46,6 +34,24 @@ pub enum TokenKind {
     Leq,
     Geq,
     Neq,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum TokenKind {
+    LineComment,
+    BlockComment { closed: bool },
+    Whitespace,
+
+    OpenParen,
+    CloseParen,
+    OpenBrace,
+    CloseBrace,
+    OpenBracket,
+    CloseBracket,
+
+    Literal(LiteralKind),
+    Ident,
+    Sym(Symbol),
 
     Unknown,
 }
@@ -135,7 +141,7 @@ impl Cursor<'_> {
                     LineComment
                 }
                 '*' => self.block_comment(),
-                _ => Slash,
+                _ => Sym(Slash),
             },
 
             '\'' => Literal(Char {
@@ -160,70 +166,70 @@ impl Cursor<'_> {
             '=' => match self.peek() {
                 '=' => {
                     self.eat();
-                    Eq2
+                    Sym(Eq2)
                 }
-                _ => Eq,
+                _ => Sym(Eq),
             },
             '<' => match self.peek() {
                 '<' => {
                     self.eat();
-                    Lt2
+                    Sym(Lt2)
                 }
                 '=' => {
                     self.eat();
-                    Leq
+                    Sym(Leq)
                 }
-                _ => Lt,
+                _ => Sym(Lt),
             },
             '>' => match self.peek() {
                 '>' => {
                     self.eat();
-                    Gt2
+                    Sym(Gt2)
                 }
                 '=' => {
                     self.eat();
-                    Geq
+                    Sym(Geq)
                 }
-                _ => Gt,
+                _ => Sym(Gt),
             },
             '!' => match self.peek() {
                 '=' => {
                     self.eat();
-                    Neq
+                    Sym(Neq)
                 }
-                _ => Exclamation,
+                _ => Sym(Exclamation),
             },
             '&' => match self.peek() {
                 '&' => {
                     self.eat();
-                    Ampersand2
+                    Sym(Ampersand2)
                 }
-                _ => Ampersand,
+                _ => Sym(Ampersand),
             },
             '|' => match self.peek() {
                 '|' => {
                     self.eat();
-                    Pipe2
+                    Sym(Pipe2)
                 }
-                _ => Pipe,
+                _ => Sym(Pipe),
             },
 
-            ';' => SemiColon,
-            ',' => Comma,
-            '.' => Dot,
             '(' => OpenParen,
             ')' => CloseParen,
             '{' => OpenBrace,
             '}' => CloseBrace,
             '[' => OpenBracket,
             ']' => CloseBracket,
-            '?' => Question,
-            '-' => Minus,
-            '+' => Plus,
-            '*' => Star,
-            '^' => Caret,
-            '~' => Tilde,
-            '%' => Percentage,
+            ';' => Sym(SemiColon),
+            ',' => Sym(Comma),
+            '.' => Sym(Dot),
+            '?' => Sym(Question),
+            '-' => Sym(Minus),
+            '+' => Sym(Plus),
+            '*' => Sym(Star),
+            '^' => Sym(Caret),
+            '~' => Sym(Tilde),
+            '%' => Sym(Percentage),
 
             _ => Unknown,
         };

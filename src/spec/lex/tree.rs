@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use crate::SymbolTable;
 
 use super::cook::{Delim, TokKind, Token, TokenCooker};
-use super::{Error, LError, LErrorKind, LResult, Span};
+use super::{Error, LError, LErrorKind, LResult, Span, Symbol};
 
 #[derive(Debug, Clone)]
 pub enum TokTree {
@@ -55,7 +55,7 @@ impl TokenStream {
         Span(start, end)
     }
 
-    pub fn split_on(mut self, sep: &TokKind) -> Vec<Self> {
+    pub fn split_on(mut self, sep: Symbol) -> Vec<Self> {
         let mut streams = Vec::new();
 
         while self.not_empty() {
@@ -69,15 +69,15 @@ impl TokenStream {
         streams
     }
 
-    pub fn eat_while_token<P>(&mut self, pred: &mut P) -> Self
-    where
-        P: FnMut(&TokKind) -> bool,
-    {
+    pub fn eat_until(&mut self, symbol: Symbol) -> Self {
         let mut i: usize = 0;
 
         loop {
             match self.0.get(i) {
-                Some(TokTree::Token(token)) if !pred(&token.kind) => break,
+                Some(TokTree::Token(Token {
+                    kind: TokKind::Symbol(s),
+                    ..
+                })) if *s == symbol => break,
                 None => break,
                 _ => {}
             }
@@ -88,10 +88,6 @@ impl TokenStream {
         let eaten = std::mem::replace(&mut self.0, remaining);
 
         TokenStream(eaten)
-    }
-
-    pub fn eat_until(&mut self, kind: &TokKind) -> Self {
-        self.eat_while_token(&mut |k| k != kind)
     }
 
     pub fn not_empty(&self) -> bool {
@@ -134,7 +130,7 @@ impl<'a> TokTreesReader<'a> {
         let mut trees = VecDeque::new();
 
         self.eat();
-        while self.token.kind != TokKind::Eof {
+        while !matches!(self.token.kind, TokKind::Eof) {
             trees.push_back(self.parse_token_tree()?);
         }
 

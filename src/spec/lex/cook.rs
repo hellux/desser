@@ -6,7 +6,7 @@ use super::{LError, LErrorKind};
 
 use self::TokKind::*;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub kind: TokKind,
     pub span: Span,
@@ -29,43 +29,16 @@ impl Token {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum TokKind {
     OpenDelim(Delim),
     CloseDelim(Delim),
-    SemiColon,
-    Comma,
 
     Literal(LitKind),
     Keyword(Keyword),
     Attr(Attr),
     Ident(Sym),
-
-    Dot,
-    Plus,
-    Minus,
-    Star,
-    Slash,
-    Percentage,
-    Caret,
-    Exclamation,
-    Question,
-    Tilde,
-
-    Eq,
-    Lt,
-    Gt,
-    Ampersand,
-    Pipe,
-
-    Eq2,
-    Lt2,
-    Gt2,
-    Ampersand2,
-    Pipe2,
-    Leq,
-    Geq,
-    Neq,
+    Symbol(raw::Symbol),
 
     Unknown,
     Eof,
@@ -91,7 +64,7 @@ pub enum Keyword {
     Debug,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum Attr {
     Align(bool),
     Location { base: AddrBase, bitwise: bool },
@@ -111,13 +84,13 @@ pub enum BinConstr {
     Geq,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Lit {
     pub kind: LitKind,
     pub symbol: Sym,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub enum LitKind {
     Int(i64),
     Char(u8),
@@ -186,18 +159,12 @@ impl<'a> TokenCooker<'a> {
                 }
                 None
             }
-
             raw::TokenKind::OpenParen => Some(OpenDelim(Delim::Paren)),
             raw::TokenKind::CloseParen => Some(CloseDelim(Delim::Paren)),
             raw::TokenKind::OpenBrace => Some(OpenDelim(Delim::Brace)),
             raw::TokenKind::CloseBrace => Some(CloseDelim(Delim::Brace)),
             raw::TokenKind::OpenBracket => Some(OpenDelim(Delim::Bracket)),
             raw::TokenKind::CloseBracket => Some(CloseDelim(Delim::Bracket)),
-
-            raw::TokenKind::SemiColon => Some(SemiColon),
-            raw::TokenKind::Comma => Some(Comma),
-            raw::TokenKind::Dot => Some(Dot),
-
             raw::TokenKind::Literal(kind) => {
                 let litkind = match kind {
                     raw::LiteralKind::Int(base) => self.cook_int(start, base),
@@ -211,32 +178,7 @@ impl<'a> TokenCooker<'a> {
                 Some(Literal(litkind))
             }
             raw::TokenKind::Ident => Some(self.cook_ident(start)),
-
-            raw::TokenKind::Eq => Some(Eq),
-            raw::TokenKind::Lt => Some(Lt),
-            raw::TokenKind::Gt => Some(Gt),
-            raw::TokenKind::Ampersand => Some(Ampersand),
-            raw::TokenKind::Pipe => Some(Pipe),
-
-            raw::TokenKind::Eq2 => Some(Eq2),
-            raw::TokenKind::Lt2 => Some(Lt2),
-            raw::TokenKind::Gt2 => Some(Gt2),
-            raw::TokenKind::Ampersand2 => Some(Ampersand2),
-            raw::TokenKind::Pipe2 => Some(Pipe2),
-            raw::TokenKind::Leq => Some(Leq),
-            raw::TokenKind::Geq => Some(Geq),
-            raw::TokenKind::Neq => Some(Neq),
-
-            raw::TokenKind::Minus => Some(Minus),
-            raw::TokenKind::Plus => Some(Plus),
-            raw::TokenKind::Star => Some(Star),
-            raw::TokenKind::Percentage => Some(Percentage),
-            raw::TokenKind::Exclamation => Some(Exclamation),
-            raw::TokenKind::Question => Some(Question),
-            raw::TokenKind::Slash => Some(Slash),
-            raw::TokenKind::Caret => Some(Caret),
-            raw::TokenKind::Tilde => Some(Tilde),
-
+            raw::TokenKind::Sym(s) => Some(TokKind::Symbol(s)),
             raw::TokenKind::Unknown => {
                 self.err(LErrorKind::UnknownToken, start);
                 Some(Unknown)
