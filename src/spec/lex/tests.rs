@@ -83,8 +83,8 @@ fn lex_comments() {
         "/* */ */",
         "Token { kind: BlockComment{ closed: true }, len: 5 }
          Token { kind: Whitespace, len: 1 }
-         Token { kind: Star, len: 1 }
-         Token { kind: Slash, len: 1 }",
+         Token { kind: Sym(Star), len: 1 }
+         Token { kind: Sym(Slash), len: 1 }",
     );
 }
 
@@ -96,26 +96,28 @@ fn lex_strings() {
         "Token { kind: Literal(Str { closed: true } ), len: 8 }",
     );
     check_lexing(
-        "'char'",
-        "Token { kind: Literal(Char { closed: true } ), len: 6 }",
+        "'c'",
+        "Token { kind: Literal(Char { closed: true } ), len: 3 }",
     );
     check_lexing(
         r#""string with \\ escape""#,
         "Token { kind: Literal(Str { closed: true } ), len: 23 }",
     );
-    check_lexing(
-        r#"'char with \' escape'"#,
-        "Token { kind: Literal(Char { closed: true } ), len: 21 }",
-    );
 
     // invalid
+    check_lexing(
+        "'char'",
+        "Token { kind: Sym(Apostrophe), len: 1 }
+         Token { kind: Ident, len: 4 }
+         Token { kind: Sym(Apostrophe), len: 1 }",
+    );
     check_lexing(
         r#""unclosed string"#,
         "Token { kind: Literal(Str { closed: false } ), len: 16 }",
     );
     check_lexing(
-        r#"'unclosed char \'"#,
-        "Token { kind: Literal(Char { closed: false } ), len: 17 }",
+        r#"'\nunclosed char \'"#,
+        "Token { kind: Literal(Char { closed: false } ), len: 19 }",
     );
 }
 
@@ -135,28 +137,28 @@ fn cook_structs() {
     }"#,
         "
         Keyword(Def)
-        Ident(6)
+        Ident(7)
         OpenDelim(Brace)
         Attr(BinConstr(Eq))
         OpenDelim(Paren)
         Literal(Str([104, 101, 97, 100]))
         CloseDelim(Paren)
         OpenDelim(Bracket)
-        Ident(7)
-        SemiColon
+        Ident(8)
+        Symbol(SemiColon)
         Literal(Int(4))
         CloseDelim(Bracket)
-        Ident(8)
-        Comma
+        Ident(9)
+        Symbol(Comma)
         Attr(Constraint)
         OpenDelim(Paren)
-        Dot
-        Leq
+        Symbol(Dot)
+        Symbol(Leq)
         Literal(Int(0))
         CloseDelim(Paren)
-        Ident(9)
         Ident(10)
-        Comma
+        Ident(11)
+        Symbol(Comma)
         CloseDelim(Brace)
         Eof",
     );

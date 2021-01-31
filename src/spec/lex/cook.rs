@@ -313,7 +313,7 @@ pub fn tokenize(src: &str) -> impl Iterator<Item = Token> + '_ {
             None
         } else {
             let token = cooker.next_token();
-            empty = token.kind == Eof;
+            empty = matches!(token.kind, Eof);
             Some(token)
         }
     })

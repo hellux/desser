@@ -2,14 +2,14 @@
 //!
 //! Lexing is divided into three parts with each their own module:
 //!
-//!     - **raw**: Create a raw token from a string. These tokens only contain
-//!     type and length, no span or literal values. All data is turned into
-//!     tokens.
-//!     - **cook**: Take a raw token and provide a cooked token. These contain
-//!     span, value and symbol information. Comments are removed and spacing is
-//!     handled separately.
-//!     - **tree**: Create a stream of token trees. A token tree is either a
-//!     leaf token or a substream which is the content within two delimiters.
+//! - **raw**: Create a raw token from a string. These tokens only contain type
+//!            and length, no span or literal values. All data is turned into
+//!            tokens.
+//! - **cook**: Take a raw token and provide a cooked token. These contain
+//!             span, value and symbol information. Comments are removed and
+//!             spacing is handled separately.
+//! - **tree**: Create a stream of token trees. A token tree is either a leaf
+//!             token or a substream which is the content within two delimiters.
 
 mod cook;
 mod raw;
