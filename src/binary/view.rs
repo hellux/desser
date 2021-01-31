@@ -136,12 +136,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
     ) -> io::Result<()> {
         match kind {
             StructField::Prim(ptr) => {
-                let data = format::read_bytes(
-                    ptr.start,
-                    ptr.pty.size(),
-                    ptr.byte_order,
-                    &mut self.f,
-                );
+                let data = ptr.read(&mut self.f);
                 ptr.pty.fmt(&mut self.out, data.as_slice())
             }
             StructField::Array(arr) => self.fmt_array(arr, level + 1),

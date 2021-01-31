@@ -59,7 +59,7 @@ pub struct Field {
 pub struct FieldType {
     pub kind: FieldKind,
     pub byte_order: Order,
-    //pub bit_order: Order,
+    pub bit_order: Order,
     pub loc: Location,
     pub alignment: Alignment,
     pub constraints: Vec<Constraint>,

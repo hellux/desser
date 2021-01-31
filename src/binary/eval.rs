@@ -164,6 +164,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                             *start,
                             *size,
                             Order::LittleEndian,
+                            Order::LittleEndian,
                             self.f,
                         ),
                         *size,
