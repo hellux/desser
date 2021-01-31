@@ -122,43 +122,83 @@ pub struct SpannedSym {
 }
 
 #[derive(Copy, Clone, Debug)]
-enum BuiltIn {
-    IdentSelf,
-    IdentSuper,
-    PropLength,
-    PropStart,
-    PropSize,
-    PropEnd,
-    PropOffset,
+enum BuiltInIdent {
+    IdSelf,
+    Super,
 }
-const BUILTINS: [BuiltIn; 7] = [
-    BuiltIn::IdentSelf,
-    BuiltIn::IdentSuper,
-    BuiltIn::PropLength,
-    BuiltIn::PropStart,
-    BuiltIn::PropSize,
-    BuiltIn::PropEnd,
-    BuiltIn::PropOffset,
-];
 
-impl BuiltIn {
-    fn name(&self) -> &str {
-        match self {
-            Self::IdentSelf => "self",
-            Self::IdentSuper => "super",
-            Self::PropLength => "length",
-            Self::PropStart => "start",
-            Self::PropSize => "size",
-            Self::PropEnd => "end",
-            Self::PropOffset => "offset",
-        }
-    }
+#[derive(Copy, Clone, Debug)]
+enum BuiltInProp {
+    Order,
+
+    Constraint,
+    Zero,
+    NonZero,
+    Eq,
+    Neq,
+    Lt,
+    Gt,
+    Leq,
+    Geq,
+
+    Align,
+    AlignBit,
+
+    Addr,
+    Skip,
+    Offset,
+    AddrBit,
+    SkipBit,
+    OffsetBit,
 }
+
+#[derive(Copy, Clone, Debug)]
+enum BuiltInAttr {
+    Start,
+    Size,
+    End,
+    Offset,
+    Length,
+}
+
+const IDENTIFIERS: [(BuiltInIdent, &str); 2] = [
+    (BuiltInIdent::IdSelf, "self"),
+    (BuiltInIdent::Super, "super"),
+];
+const PROPERTIES: [(BuiltInProp, &str); 18] = [
+    (BuiltInProp::Order, "order"),
+    (BuiltInProp::Constraint, "constraint"),
+    (BuiltInProp::Zero, "zero"),
+    (BuiltInProp::NonZero, "nonzero"),
+    (BuiltInProp::Eq, "eq"),
+    (BuiltInProp::Neq, "neq"),
+    (BuiltInProp::Lt, "lt"),
+    (BuiltInProp::Gt, "gt"),
+    (BuiltInProp::Leq, "leq"),
+    (BuiltInProp::Geq, "geq"),
+    (BuiltInProp::Align, "align"),
+    (BuiltInProp::AlignBit, "balign"),
+    (BuiltInProp::Addr, "addr"),
+    (BuiltInProp::Skip, "skip"),
+    (BuiltInProp::Offset, "offset"),
+    (BuiltInProp::AddrBit, "baddr"),
+    (BuiltInProp::SkipBit, "bskip"),
+    (BuiltInProp::OffsetBit, "boffset"),
+];
+const ATTRIBUTES: [(BuiltInAttr, &str); 5] = [
+    (BuiltInAttr::Start, "start"),
+    (BuiltInAttr::Size, "size"),
+    (BuiltInAttr::End, "end"),
+    (BuiltInAttr::Offset, "offset"),
+    (BuiltInAttr::Length, "length"),
+];
 
 #[derive(Clone, Debug)]
 pub struct SymbolTable {
     map: HashMap<String, Sym>,
     arr: Vec<String>,
+    attributes: HashMap<Sym, BuiltInAttr>,
+    properties: HashMap<Sym, BuiltInProp>,
 }
 
 impl SymbolTable {
@@ -166,10 +206,22 @@ impl SymbolTable {
         let mut tbl = SymbolTable {
             map: HashMap::new(),
             arr: Vec::new(),
+            attributes: HashMap::new(),
+            properties: HashMap::new(),
         };
 
-        for bi in BUILTINS.iter() {
-            tbl.insert(bi.name());
+        for (_, name) in IDENTIFIERS.iter() {
+            tbl.insert(name);
+        }
+
+        for (prop, name) in PROPERTIES.iter() {
+            let sym = tbl.insert(name);
+            tbl.properties.insert(sym, *prop);
+        }
+
+        for (attr, name) in ATTRIBUTES.iter() {
+            let sym = tbl.insert(name);
+            tbl.attributes.insert(sym, *attr);
         }
 
         tbl
@@ -190,11 +242,18 @@ impl SymbolTable {
         }
     }
 
-    fn builtin(&self, b: BuiltIn) -> Sym {
-        *self.map.get(b.name()).unwrap()
+    fn ident_sym(&self, b: BuiltInIdent) -> Sym {
+        *self
+            .map
+            .get(IDENTIFIERS.get(b as usize).unwrap().1)
+            .unwrap()
     }
 
-    fn to_builtin(&self, sym: Sym) -> Option<BuiltIn> {
-        BUILTINS.get(sym as usize).copied()
+    fn property(&self, sym: Sym) -> Option<BuiltInProp> {
+        self.properties.get(&sym).copied()
+    }
+
+    fn attribute(&self, sym: Sym) -> Option<BuiltInAttr> {
+        self.attributes.get(&sym).copied()
     }
 }

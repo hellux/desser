@@ -123,7 +123,7 @@ pub enum ExprKind {
     Index(Box<Expr>, Box<Expr>),
 
     Literal(LitKind),
-    Property(Box<Expr>, SpannedSym),
+    Attr(Box<Expr>, SpannedSym),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Unary(UnOp, Box<Expr>),
 }

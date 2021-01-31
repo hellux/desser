@@ -2,8 +2,7 @@ use std::io::{Read, Seek};
 
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
 use crate::spec::LitKind;
-use crate::BuiltIn::*;
-use crate::SpannedSym;
+use crate::{BuiltInAttr, SpannedSym};
 
 use super::error::{EError, EErrorKind, EResult};
 use super::scope::{Name, NameArray, NameField, NameStruct, Scope};
@@ -110,7 +109,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     ByteSize(bytes.len() as u64).into(),
                 )),
             },
-            ExprKind::Property(expr, prop) => self.eval_property(expr, *prop),
+            ExprKind::Attr(expr, attr) => self.eval_attribute(expr, *attr),
             ExprKind::Binary(op, lhs, rhs) => {
                 self.eval_binary(*op, &lhs, &rhs)
             }
@@ -145,11 +144,9 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 } else {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
-                Partial::Name(Name::Field(
-                    arr_nf.get_element(u).ok_or_else(|| {
-                        expr.err(EErrorKind::ElementNotFound(u))
-                    })?,
-                ))
+                Partial::Name(Name::Field(arr_nf.get_element(u).ok_or_else(
+                    || expr.err(EErrorKind::ElementNotFound(u)),
+                )?))
             }
             _ => Partial::Value(self.eval(expr)?),
         })
@@ -184,31 +181,30 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             .ok_or_else(|| expr.err(EErrorKind::NonField))
     }
 
-    fn eval_property(
+    fn eval_attribute(
         &mut self,
         expr: &'a Expr,
-        prop: SpannedSym,
+        attr: SpannedSym,
     ) -> EResult<Val> {
         let bi = self
             .symtab
-            .to_builtin(prop.sym)
-            .ok_or(EError(prop.span, EErrorKind::NotAProperty(prop.sym)))?;
+            .attribute(attr.sym)
+            .ok_or(EError(attr.span, EErrorKind::NotAnAttribute(attr.sym)))?;
         match bi {
-            PropStart => self.property_start(expr),
-            PropSize => self.property_size(expr),
-            PropEnd => self.property_end(expr),
-            PropOffset => self.property_offset(expr),
-            PropLength => self.property_length(expr),
-            _ => Err(EError(prop.span, EErrorKind::NotAProperty(prop.sym))),
+            BuiltInAttr::Start => self.attr_start(expr),
+            BuiltInAttr::Size => self.attr_size(expr),
+            BuiltInAttr::End => self.attr_end(expr),
+            BuiltInAttr::Offset => self.attr_offset(expr),
+            BuiltInAttr::Length => self.attr_length(expr),
         }
     }
 
-    fn property_start(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn attr_start(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self.expect_nf(expr)?.start();
         Ok(Val::Integer(BytePos::from(start).size() as IntVal))
     }
 
-    fn property_size(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn attr_size(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self.expect_nf(expr)?.start();
         let size = self.expect_nf(expr)?.size();
         Ok(Val::Integer(
@@ -216,18 +212,18 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         ))
     }
 
-    fn property_end(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn attr_end(&mut self, expr: &'a Expr) -> EResult<Val> {
         let start = self.expect_nf(expr)?.start();
         let size = self.expect_nf(expr)?.size();
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
-    fn property_offset(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn attr_offset(&mut self, expr: &'a Expr) -> EResult<Val> {
         let offset = self.expect_nf(expr)?.start() - self.scope.base();
         Ok(Val::Integer(BytePos::from(offset).size() as IntVal))
     }
 
-    fn property_length(&mut self, expr: &'a Expr) -> EResult<Val> {
+    fn attr_length(&mut self, expr: &'a Expr) -> EResult<Val> {
         if let NameField::Array(narr) = self.expect_nf(expr)? {
             Ok(Val::Integer(narr.elements.len() as IntVal))
         } else {

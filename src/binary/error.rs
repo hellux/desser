@@ -23,7 +23,7 @@ pub enum EErrorKind {
     IdentifierNotFound(Sym),
     MemberNotFound(Sym),
     ElementNotFound(usize),
-    NotAProperty(Sym),
+    NotAnAttribute(Sym),
     ArgumentMismatch,
     BinaryTypeError,
     UnaryCompound,

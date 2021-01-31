@@ -1,4 +1,4 @@
-use crate::{AddrBase, Sym, SymbolTable};
+use crate::{Sym, SymbolTable};
 
 use super::raw;
 use super::Span;
@@ -36,7 +36,6 @@ pub enum TokKind {
 
     Literal(LitKind),
     Keyword(Keyword),
-    Attr(Attr),
     Ident(Sym),
     Symbol(raw::Symbol),
 
@@ -62,26 +61,6 @@ pub enum Keyword {
     In,
     Constrain,
     Debug,
-}
-
-#[derive(Clone, Debug)]
-pub enum Attr {
-    Align(bool),
-    Location { base: AddrBase, bitwise: bool },
-    Order,
-    Constraint,
-    BinConstr(BinConstr),
-    Zero(bool),
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum BinConstr {
-    Eq,
-    Neq,
-    Lt,
-    Gt,
-    Leq,
-    Geq,
 }
 
 #[derive(Clone, Debug)]
@@ -258,45 +237,6 @@ impl<'a> TokenCooker<'a> {
             "in" => Keyword(Keyword::In),
             "debug" => Keyword(Keyword::Debug),
             "constrain" => Keyword(Keyword::Constrain),
-
-            "order" => Attr(Attr::Order),
-            "constraint" => Attr(Attr::Constraint),
-            "zero" => Attr(Attr::Zero(true)),
-            "nonzero" => Attr(Attr::Zero(false)),
-            "eq" => Attr(Attr::BinConstr(BinConstr::Eq)),
-            "neq" => Attr(Attr::BinConstr(BinConstr::Neq)),
-            "lt" => Attr(Attr::BinConstr(BinConstr::Lt)),
-            "gt" => Attr(Attr::BinConstr(BinConstr::Gt)),
-            "leq" => Attr(Attr::BinConstr(BinConstr::Leq)),
-            "geq" => Attr(Attr::BinConstr(BinConstr::Geq)),
-
-            "align" => Attr(Attr::Align(false)),
-            "addr" => Attr(Attr::Location {
-                base: AddrBase::Absolute,
-                bitwise: false,
-            }),
-            "skip" => Attr(Attr::Location {
-                base: AddrBase::Relative,
-                bitwise: false,
-            }),
-            "offset" => Attr(Attr::Location {
-                base: AddrBase::Local,
-                bitwise: false,
-            }),
-
-            "balign" => Attr(Attr::Align(true)),
-            "baddr" => Attr(Attr::Location {
-                base: AddrBase::Absolute,
-                bitwise: true,
-            }),
-            "bskip" => Attr(Attr::Location {
-                base: AddrBase::Relative,
-                bitwise: true,
-            }),
-            "boffset" => Attr(Attr::Location {
-                base: AddrBase::Local,
-                bitwise: true,
-            }),
 
             id => Ident(self.symtab.insert(id)),
         }

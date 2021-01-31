@@ -1,12 +1,12 @@
 use crate::{
-    AddrBase, BuiltIn, Error, ErrorType, Order, SpannedSym, Sym, SymbolTable,
+    AddrBase, BuiltInIdent, BuiltInProp, Error, ErrorType, Order, SpannedSym,
+    Sym, SymbolTable,
 };
 
 use super::ast;
 use super::lex::Delim::{Brace, Bracket, Paren};
 use super::lex::{
-    Attr, BinConstr, Delim, DelimNode, Keyword, Symbol, TokKind, TokTree,
-    Token, TokenStream,
+    Delim, DelimNode, Keyword, Symbol, TokKind, TokTree, Token, TokenStream,
 };
 use super::Span;
 
@@ -449,33 +449,37 @@ impl Parser {
         })
     }
 
-    fn parse_attrs(
+    fn parse_properties(
         &mut self,
         stream: &mut TokenStream,
-    ) -> PResult<Vec<(Attr, Vec<TokenStream>)>> {
-        let mut attributes = Vec::new();
+    ) -> PResult<Vec<(Property, Vec<TokenStream>)>> {
+        let mut properties = Vec::new();
 
         while let Some(TokTree::Token(Token {
-            kind: TokKind::Attr(attr),
+            kind: TokKind::Ident(sym),
             ..
         })) = stream.peek()
         {
-            let attr = attr.clone();
-            self.eat(stream)?; // attr name
-            let argstream = if let Some(TokTree::Delim(DelimNode {
-                delim: Paren,
-                ..
-            })) = stream.peek()
-            {
-                self.eat(stream)?; // arguments
-                self.expect_delim()?.stream.split_on(Symbol::Comma)
+            if let Some(bip) = self.symtab.property(*sym) {
+                let prop: Property = bip.into();
+                self.eat(stream)?; // prop ident
+                let argstream = if let Some(TokTree::Delim(DelimNode {
+                    delim: Paren,
+                    ..
+                })) = stream.peek()
+                {
+                    self.eat(stream)?; // arguments
+                    self.expect_delim()?.stream.split_on(Symbol::Comma)
+                } else {
+                    vec![]
+                };
+                properties.push((prop, argstream));
             } else {
-                vec![]
-            };
-            attributes.push((attr, argstream));
+                break;
+            }
         }
 
-        Ok(attributes)
+        Ok(properties)
     }
 
     fn parse_field_type(
@@ -493,16 +497,16 @@ impl Parser {
             bitwise: false,
         };
         let mut constraints = Vec::new();
-        let attrs = self.parse_attrs(stream)?;
-        for (attr, mut args) in attrs {
-            match attr {
-                Attr::Align(bitwise) => {
+        let props = self.parse_properties(stream)?;
+        for (prop, mut args) in props {
+            match prop {
+                Property::Align(bitwise) => {
                     alignment = ast::Alignment {
                         expr: Some(self.parse_expr(args.remove(0))?),
                         bitwise,
                     }
                 }
-                Attr::Location { base, bitwise } => {
+                Property::Location { base, bitwise } => {
                     let expr = Some(self.parse_expr(args.remove(0))?);
                     loc = ast::Location {
                         expr,
@@ -510,7 +514,7 @@ impl Parser {
                         bitwise,
                     };
                 }
-                Attr::Order => {
+                Property::Order => {
                     let mut arg0 = args.remove(0);
                     self.eat(&mut arg0)?;
                     let ident = self.expect_ident()?;
@@ -525,33 +529,24 @@ impl Parser {
                         }
                     }
                 }
-                Attr::Constraint => {
-                    constraints.push(ast::Constraint::Generic(
-                        self.parse_expr(args.remove(0))?,
-                    ));
-                }
-                Attr::Zero(z) => {
-                    constraints.push(ast::Constraint::Zero(z));
-                }
-                Attr::BinConstr(rel) => {
-                    let binop = match rel {
-                        BinConstr::Eq => ast::BinOp::Eq,
-                        BinConstr::Neq => ast::BinOp::Neq,
-                        BinConstr::Lt => ast::BinOp::Lt,
-                        BinConstr::Gt => ast::BinOp::Gt,
-                        BinConstr::Leq => ast::BinOp::Leq,
-                        BinConstr::Geq => ast::BinOp::Geq,
+                Property::Constr(constr) => {
+                    let c = match constr {
+                        Constr::Generic => ast::Constraint::Generic(
+                            self.parse_expr(args.remove(0))?,
+                        ),
+                        Constr::Zero(z) => ast::Constraint::Zero(z),
+                        Constr::Binary(binop) => ast::Constraint::Binary(
+                            binop,
+                            self.parse_expr(args.remove(0))?,
+                        ),
                     };
-                    constraints.push(ast::Constraint::Binary(
-                        binop,
-                        self.parse_expr(args.remove(0))?,
-                    ));
+                    constraints.push(c);
                 }
             }
 
             if !args.is_empty() {
                 return Err(self
-                    .err_hint(Unexpected, "too many arguments to attribute"));
+                    .err_hint(Unexpected, "too many arguments to property"));
             }
         }
 
@@ -765,7 +760,7 @@ impl Parser {
         let mut lhs_kind = match self.tree.take() {
             TokTree::Token(token) => match token.kind {
                 TokKind::Symbol(Symbol::Dot) => ast::ExprKind::Variable(
-                    self.symtab.builtin(BuiltIn::IdentSelf),
+                    self.symtab.ident_sym(BuiltInIdent::IdSelf),
                 ),
                 TokKind::Literal(litkind) => ast::ExprKind::Literal(litkind),
                 TokKind::Ident(sym) => ast::ExprKind::Variable(sym),
@@ -842,16 +837,16 @@ impl Parser {
                 }) if *s == Symbol::Apostrophe => {
                     self.eat(stream)?; // apostrophe
                     self.eat(stream)?; // id
-                    let prop = self.expect_ident()?;
+                    let attr = self.expect_ident()?;
                     let expr = ast::Expr {
                         kind: lhs_kind,
                         span: lhs_span,
                     };
                     let ssym = SpannedSym {
                         span: self.span,
-                        sym: prop,
+                        sym: attr,
                     };
-                    lhs_kind = ast::ExprKind::Property(Box::new(expr), ssym);
+                    lhs_kind = ast::ExprKind::Attr(Box::new(expr), ssym);
                 }
                 TokTree::Token(Token {
                     kind: TokKind::Symbol(s),
@@ -926,6 +921,67 @@ impl Parser {
     fn consume(self) -> (SymbolTable, Vec<PError>) {
         (self.symtab, self.errors)
     }
+}
+
+impl From<BuiltInProp> for Property {
+    fn from(b: BuiltInProp) -> Self {
+        match b {
+            BuiltInProp::Order => Self::Order,
+
+            BuiltInProp::Constraint => Self::Constr(Constr::Generic),
+            BuiltInProp::Zero => Self::Constr(Constr::Zero(true)),
+            BuiltInProp::NonZero => Self::Constr(Constr::Zero(false)),
+            BuiltInProp::Eq => Self::Constr(Constr::Binary(ast::BinOp::Eq)),
+            BuiltInProp::Neq => Self::Constr(Constr::Binary(ast::BinOp::Neq)),
+            BuiltInProp::Lt => Self::Constr(Constr::Binary(ast::BinOp::Lt)),
+            BuiltInProp::Gt => Self::Constr(Constr::Binary(ast::BinOp::Gt)),
+            BuiltInProp::Leq => Self::Constr(Constr::Binary(ast::BinOp::Leq)),
+            BuiltInProp::Geq => Self::Constr(Constr::Binary(ast::BinOp::Geq)),
+
+            BuiltInProp::Align => Self::Align(false),
+            BuiltInProp::AlignBit => Self::Align(true),
+
+            BuiltInProp::Addr => Self::Location {
+                base: AddrBase::Absolute,
+                bitwise: false,
+            },
+            BuiltInProp::Skip => Self::Location {
+                base: AddrBase::Relative,
+                bitwise: false,
+            },
+            BuiltInProp::Offset => Self::Location {
+                base: AddrBase::Local,
+                bitwise: false,
+            },
+            BuiltInProp::AddrBit => Self::Location {
+                base: AddrBase::Absolute,
+                bitwise: true,
+            },
+            BuiltInProp::SkipBit => Self::Location {
+                base: AddrBase::Relative,
+                bitwise: true,
+            },
+            BuiltInProp::OffsetBit => Self::Location {
+                base: AddrBase::Local,
+                bitwise: true,
+            },
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+enum Property {
+    Align(bool),
+    Constr(Constr),
+    Location { base: AddrBase, bitwise: bool },
+    Order,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Constr {
+    Generic,
+    Binary(ast::BinOp),
+    Zero(bool),
 }
 
 fn alias_field_kind(

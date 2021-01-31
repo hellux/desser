@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::spec::ast;
-use crate::BuiltIn;
+use crate::BuiltInIdent;
 use crate::SymbolTable;
 
 use super::eval::{Partial, Val};
@@ -169,8 +169,8 @@ impl<'n> Scope<'n> {
         };
         Scope {
             structs: vec![builtins],
-            self_sym: st.builtin(BuiltIn::IdentSelf),
-            super_sym: st.builtin(BuiltIn::IdentSuper),
+            self_sym: st.ident_sym(BuiltInIdent::IdSelf),
+            super_sym: st.ident_sym(BuiltInIdent::Super),
             unnamed: Sym::max_value(),
         }
     }

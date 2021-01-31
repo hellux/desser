@@ -7,7 +7,7 @@ use super::scope::{
     IndexSpace, Name, NameArray, NameField, NameStruct, Namespace, Scope,
 };
 use super::*;
-use crate::{AddrBase, BuiltIn, Error, Span, SymbolTable};
+use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
 
 pub(super) fn parse<'s, R: BufRead + Seek>(
     f: &'s mut R,
@@ -49,7 +49,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         length: BitSize,
         symtab: &'s SymbolTable,
     ) -> Self {
-        let self_sym = symtab.builtin(BuiltIn::IdentSelf);
+        let self_sym = symtab.ident_sym(BuiltInIdent::IdSelf);
         FileParser {
             f,
             traversed_fields: Vec::new(),
