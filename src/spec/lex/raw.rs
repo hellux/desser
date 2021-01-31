@@ -151,7 +151,7 @@ impl Cursor<'_> {
             },
 
             '\'' => {
-                if self.peek() == '\\' || self.peekn(2) == '\'' {
+                if self.peek() == '\\' || self.peekn(1) == '\'' {
                     Literal(Char {
                         closed: self.eat_string('\''),
                     })
