@@ -386,6 +386,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     start: self.pos,
                     pty: spty,
                     byte_order: ty.byte_order,
+                    bit_order: ty.bit_order,
                 };
                 self.seek(ptr.start + ptr.pty.size())?;
                 NameField::Prim(ptr)

@@ -130,6 +130,7 @@ enum BuiltInIdent {
 #[derive(Copy, Clone, Debug)]
 enum BuiltInProp {
     Order,
+    OrderBit,
 
     Constraint,
     Zero,
@@ -165,8 +166,9 @@ const IDENTIFIERS: [(BuiltInIdent, &str); 2] = [
     (BuiltInIdent::IdSelf, "self"),
     (BuiltInIdent::Super, "super"),
 ];
-const PROPERTIES: [(BuiltInProp, &str); 18] = [
+const PROPERTIES: [(BuiltInProp, &str); 19] = [
     (BuiltInProp::Order, "order"),
+    (BuiltInProp::OrderBit, "border"),
     (BuiltInProp::Constraint, "constraint"),
     (BuiltInProp::Zero, "zero"),
     (BuiltInProp::NonZero, "nonzero"),

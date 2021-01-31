@@ -487,6 +487,7 @@ impl Parser {
         stream: &mut TokenStream,
     ) -> PResult<ast::FieldType> {
         let mut byte_order = Order::LittleEndian;
+        let mut bit_order = Order::LittleEndian;
         let mut alignment = ast::Alignment {
             expr: None,
             bitwise: false,
@@ -514,12 +515,12 @@ impl Parser {
                         bitwise,
                     };
                 }
-                Property::Order => {
+                ord @ Property::ByteOrder | ord @ Property::BitOrder => {
                     let mut arg0 = args.remove(0);
                     self.eat(&mut arg0)?;
                     let ident = self.expect_ident()?;
                     self.assert_eof(&arg0, "order takes only le or be");
-                    byte_order = match self.symtab.name(ident).unwrap() {
+                    let order = match self.symtab.name(ident).unwrap() {
                         "le" => Order::LittleEndian,
                         "be" => Order::BigEndian,
                         _ => {
@@ -527,6 +528,11 @@ impl Parser {
                                 self.err_hint(Unexpected, "expected le or be")
                             )
                         }
+                    };
+                    match ord {
+                        Property::ByteOrder => byte_order = order,
+                        Property::BitOrder => bit_order = order,
+                        _ => unreachable!(),
                     }
                 }
                 Property::Constr(constr) => {
@@ -608,6 +614,7 @@ impl Parser {
         Ok(ast::FieldType {
             kind,
             byte_order,
+            bit_order,
             loc,
             alignment,
             constraints,
@@ -926,7 +933,8 @@ impl Parser {
 impl From<BuiltInProp> for Property {
     fn from(b: BuiltInProp) -> Self {
         match b {
-            BuiltInProp::Order => Self::Order,
+            BuiltInProp::Order => Self::ByteOrder,
+            BuiltInProp::OrderBit => Self::BitOrder,
 
             BuiltInProp::Constraint => Self::Constr(Constr::Generic),
             BuiltInProp::Zero => Self::Constr(Constr::Zero(true)),
@@ -974,7 +982,8 @@ enum Property {
     Align(bool),
     Constr(Constr),
     Location { base: AddrBase, bitwise: bool },
-    Order,
+    ByteOrder,
+    BitOrder,
 }
 
 #[derive(Copy, Clone, Debug)]

@@ -29,6 +29,7 @@ pub struct Ptr {
     pub start: BitPos,
     pub pty: PrimType,
     pub byte_order: Order,
+    pub bit_order: Order,
 }
 
 #[derive(Clone, Debug)]

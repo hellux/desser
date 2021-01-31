@@ -7,9 +7,18 @@ use super::eval::{FloatVal, IntVal, Val};
 use super::{Order, PrimType, Ptr};
 
 impl Ptr {
+    pub fn read<R: Read + Seek>(&self, f: &mut R) -> Vec<u8> {
+        read_bytes(
+            self.start,
+            self.pty.size(),
+            self.byte_order,
+            self.bit_order,
+            f,
+        )
+    }
+
     pub fn eval<R: Read + Seek>(&self, f: &mut R) -> Val {
-        let bytes =
-            read_bytes(self.start, self.pty.size(), self.byte_order, f);
+        let bytes = self.read(f);
         self.pty.eval(bytes.as_slice())
     }
 }
@@ -18,31 +27,39 @@ pub fn read_bytes<R: Read + Seek>(
     start: BitPos,
     size: BitSize,
     byte_order: Order,
+    bit_order: Order,
     f: &mut R,
 ) -> Vec<u8> {
+    // read all bytes that data overlaps
     let start_byte: BytePos = start.into();
-    f.seek(SeekFrom::Start(start_byte.0)).unwrap();
-
-    let end = start + size;
     let size_bytes = ByteSize::from_unaligned(start, size);
     let mut buf = vec![0; size_bytes.size()];
+    f.seek(SeekFrom::Start(start_byte.0)).unwrap();
     f.read_exact(buf.as_mut_slice()).unwrap();
 
-    // use little endian internally
+    // use little endian byte order internally
     if byte_order == Order::BigEndian {
         buf.reverse();
     }
 
-    // shift value bits to rightmost side, e.g [?xxx|xx??] -> [???x|xxxx]
-    let mut bytes = if end.byte_aligned() {
-        buf
+    // shift data to rightmost side, e.g [?xxx|xx??] -> [???x|xxxx]
+    let end = start + size;
+    let shift = if !end.byte_aligned() && bit_order == Order::BigEndian {
+        8 - end.bit_index()
+    } else if !start.byte_aligned() && bit_order == Order::LittleEndian {
+        start.bit_index()
     } else {
+        0
+    };
+    let mut bytes = if shift > 0 {
         let size_aligned: ByteSize = size.into();
-        let buf_aligned = le_shr(&buf, 8 - end.bit_index() as usize);
+        let buf_aligned = le_shr(&buf, shift as usize);
         buf_aligned.into_iter().take(size_aligned.size()).collect()
+    } else {
+        buf
     };
 
-    // mask out extra data in msb, e.g [???x|xxxx] -> [000x|xxxx]
+    // mask out excess bits in msb, e.g [???x|xxxx] -> [000x|xxxx]
     if !size.byte_aligned() {
         let last = bytes.len() - 1;
         bytes[last] &= (1 << size.bit_index()) - 1;
