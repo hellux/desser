@@ -33,17 +33,22 @@ pub fn read_bytes<R: Read + Seek>(
         buf.reverse();
     }
 
-    // shift value bits to rightmost side, e.g "[?xxx|xx??]" -> "[???x|xxxx]"
-    if end.byte_aligned() {
+    // shift value bits to rightmost side, e.g [?xxx|xx??] -> [???x|xxxx]
+    let mut bytes = if end.byte_aligned() {
         buf
     } else {
         let size_aligned: ByteSize = size.into();
         let buf_aligned = le_shr(&buf, 8 - end.bit_index() as usize);
-        buf_aligned
-            .into_iter()
-            .skip(size_bytes.size() - size_aligned.size())
-            .collect()
+        buf_aligned.into_iter().take(size_aligned.size()).collect()
+    };
+
+    // mask out extra data in msb, e.g [???x|xxxx] -> [000x|xxxx]
+    if !size.byte_aligned() {
+        let last = bytes.len() - 1;
+        bytes[last] &= (1 << size.bit_index()) - 1;
     }
+
+    bytes
 }
 
 fn le_shr(v: &[u8], n: usize) -> Vec<u8> {
