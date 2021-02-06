@@ -152,11 +152,20 @@ impl Parser {
     }
 
     fn assert_symbol(&mut self, symbol: Symbol) -> PResult<()> {
-        let token = self.expect_token()?;
+        let hint = "expected symbol";
+        match self.expect_token().map(|t| t.kind) {
+            Ok(TokKind::Symbol(s)) if s == symbol => Ok(()),
+            Ok(k) => Err(self.err_hint(UnexpectedToken(k), hint)),
+            Err(e) => Err(self.err_hint(e.kind, hint)),
+        }
+    }
 
-        match token.kind {
-            TokKind::Symbol(s) if s == symbol => Ok(()),
-            k => Err(self.err(UnexpectedToken(k))),
+    fn assert_keyword(&mut self, keyword: Keyword) -> PResult<()> {
+        let hint = "expected keyword";
+        match self.expect_token().map(|t| t.kind) {
+            Ok(TokKind::Keyword(kw)) if kw == keyword => Ok(()),
+            Ok(k) => Err(self.err_hint(UnexpectedToken(k), hint)),
+            Err(e) => Err(self.err_hint(e.kind, hint)),
         }
     }
 
@@ -737,13 +746,12 @@ impl Parser {
         let elem = self.expect_ident()?;
 
         self.eat(&mut stream)?; // in keword
-        let kw_tok = self.expect_token()?;
-        match kw_tok.kind {
-            TokKind::Keyword(Keyword::In) => {}
-            k => return Err(self.err(UnexpectedToken(k))),
-        };
+        self.assert_keyword(Keyword::In)?;
 
-        let arr = self.parse_expr_fix(&mut stream, 100)?;
+        let arr = self.parse_expr_fix(&mut stream, 0)?;
+
+        self.eat(&mut stream)?; // repeat keyword
+        self.assert_keyword(Keyword::Repeat)?;
 
         let ty = Box::new(self.parse_field_type(&mut stream)?);
         self.assert_eof(&stream, "unexpected junk after for loop");
