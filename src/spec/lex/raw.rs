@@ -1,3 +1,4 @@
+use std::fmt;
 use std::str::Chars;
 
 use self::LiteralKind::*;
@@ -35,6 +36,12 @@ pub enum Symbol {
     Leq,
     Geq,
     Neq,
+}
+
+impl fmt::Display for Symbol {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format!("{:?}", self).to_lowercase())
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

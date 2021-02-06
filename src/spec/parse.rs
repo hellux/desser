@@ -26,7 +26,7 @@ enum PErrorKind {
 struct PError {
     kind: PErrorKind,
     span: Span,
-    hint: Option<&'static str>,
+    hint: Option<String>,
 }
 
 type PResult<T> = Result<T, PError>;
@@ -131,10 +131,10 @@ impl Parser {
 
         match id_token.kind {
             TokKind::Ident(id) => Ok(id),
-            kind => {
-                Err(self
-                    .err_hint(UnexpectedToken(kind), "expected identifier"))
-            }
+            kind => Err(self.err_hint(
+                UnexpectedToken(kind),
+                "expected identifier".to_string(),
+            )),
         }
     }
 
@@ -146,13 +146,13 @@ impl Parser {
             }
             TokTree::Token(token) => Err(self.err_hint(
                 UnexpectedToken(token.kind),
-                "expected opening delimiter",
+                "expected opening delimiter".to_string(),
             )),
         }
     }
 
     fn assert_symbol(&mut self, symbol: Symbol) -> PResult<()> {
-        let hint = "expected symbol";
+        let hint = format!("expected {} symbol", symbol);
         match self.expect_token().map(|t| t.kind) {
             Ok(TokKind::Symbol(s)) if s == symbol => Ok(()),
             Ok(k) => Err(self.err_hint(UnexpectedToken(k), hint)),
@@ -161,7 +161,7 @@ impl Parser {
     }
 
     fn assert_keyword(&mut self, keyword: Keyword) -> PResult<()> {
-        let hint = "expected keyword";
+        let hint = format!("expected keyword {}", keyword);
         match self.expect_token().map(|t| t.kind) {
             Ok(TokKind::Keyword(kw)) if kw == keyword => Ok(()),
             Ok(k) => Err(self.err_hint(UnexpectedToken(k), hint)),
@@ -169,7 +169,7 @@ impl Parser {
         }
     }
 
-    fn assert_eof(&mut self, stream: &TokenStream, hint: &'static str) {
+    fn assert_eof(&mut self, stream: &TokenStream, hint: String) {
         if let Some(tree) = stream.peek() {
             self.errors.push(PError {
                 kind: Unexpected,
@@ -205,7 +205,7 @@ impl Parser {
         } else {
             Err(self.err_hint(
                 UnexpectedOpenDelim(dn.delim),
-                "expected braces after struct id",
+                "expected braces after struct id".to_string(),
             ))
         }
     }
@@ -304,7 +304,7 @@ impl Parser {
                     Keyword::Def | Keyword::Const => {
                         return Err(self.err_hint(
                             UnexpectedKeyword(kw),
-                            "may only be defined in struct header",
+                            "may only be defined in struct header".to_string(),
                         ));
                     }
                     _ => {
@@ -352,7 +352,7 @@ impl Parser {
         } else {
             return Err(self.err_hint(
                 UnexpectedOpenDelim(dn.delim),
-                "expected condition after if",
+                "expected condition after if".to_string(),
             ));
         };
 
@@ -363,7 +363,7 @@ impl Parser {
         } else {
             return Err(self.err_hint(
                 UnexpectedOpenDelim(dn.delim),
-                "expected body after if",
+                "expected body after if".to_string(),
             ));
         };
 
@@ -389,7 +389,7 @@ impl Parser {
                     } else {
                         return Err(self.err_hint(
                             UnexpectedOpenDelim(dn.delim),
-                            "expected condition after else if",
+                            "expected condition after else if".to_string(),
                         ));
                     };
                     Some(cond)
@@ -405,7 +405,7 @@ impl Parser {
                 } else {
                     return Err(self.err_hint(
                         UnexpectedOpenDelim(dn.delim),
-                        "expected body after if/else",
+                        "expected body after if/else".to_string(),
                     ));
                 };
 
@@ -448,7 +448,10 @@ impl Parser {
         let hidden = id.map_or(false, |sym| {
             self.symtab.name(sym).unwrap().starts_with('_')
         });
-        self.assert_eof(&stream, "expected comma after field declaration");
+        self.assert_eof(
+            &stream,
+            "expected comma after field declaration".to_string(),
+        );
 
         Ok(ast::Field {
             ty,
@@ -528,14 +531,18 @@ impl Parser {
                     let mut arg0 = args.remove(0);
                     self.eat(&mut arg0)?;
                     let ident = self.expect_ident()?;
-                    self.assert_eof(&arg0, "order takes only le or be");
+                    self.assert_eof(
+                        &arg0,
+                        "order takes only le or be".to_string(),
+                    );
                     let order = match self.symtab.name(ident).unwrap() {
                         "le" => Order::LittleEndian,
                         "be" => Order::BigEndian,
                         _ => {
-                            return Err(
-                                self.err_hint(Unexpected, "expected le or be")
-                            )
+                            return Err(self.err_hint(
+                                Unexpected,
+                                "expected le or be".to_string(),
+                            ))
                         }
                     };
                     match ord {
@@ -560,8 +567,10 @@ impl Parser {
             }
 
             if !args.is_empty() {
-                return Err(self
-                    .err_hint(Unexpected, "too many arguments to property"));
+                return Err(self.err_hint(
+                    Unexpected,
+                    "too many arguments to property".to_string(),
+                ));
             }
         }
 
@@ -617,7 +626,10 @@ impl Parser {
             TokTree::Delim(dn) if dn.delim == Brace => {
                 ast::FieldKind::Block(self.parse_block(dn.stream)?)
             }
-            _ => return Err(self.err_hint(Unexpected, "expected field type")),
+            _ => {
+                return Err(self
+                    .err_hint(Unexpected, "expected field type".to_string()))
+            }
         };
 
         Ok(ast::FieldType {
@@ -668,7 +680,8 @@ impl Parser {
         let element_type = self.parse_field_type(&mut type_stream)?;
         self.assert_eof(
             &type_stream,
-            "expected semicolon or closing bracket after array type",
+            "expected semicolon or closing bracket after array type"
+                .to_string(),
         );
 
         let arr_size = if stream.not_empty() {
@@ -684,7 +697,7 @@ impl Parser {
                     let t = self.expect_token()?;
                     self.assert_eof(
                         &stream,
-                        "expected no more tokens after array size",
+                        "expected no more tokens after array size".to_string(),
                     );
                     let span = t.span;
                     if let TokKind::Symbol(s) = t.kind {
@@ -754,14 +767,17 @@ impl Parser {
         self.assert_keyword(Keyword::Repeat)?;
 
         let ty = Box::new(self.parse_field_type(&mut stream)?);
-        self.assert_eof(&stream, "unexpected junk after for loop");
+        self.assert_eof(&stream, "unexpected junk after for loop".to_string());
 
         Ok(ast::ForArray { elem, arr, ty })
     }
 
     fn parse_expr(&mut self, mut stream: TokenStream) -> PResult<ast::Expr> {
         let expr = self.parse_expr_fix(&mut stream, 0)?;
-        self.assert_eof(&stream, "unexpected token after expression");
+        self.assert_eof(
+            &stream,
+            "unexpected token after expression".to_string(),
+        );
         Ok(expr)
     }
 
@@ -786,7 +802,8 @@ impl Parser {
                         _ => {
                             return Err(self.err_hint(
                                 UnexpectedSymbol(s),
-                                "expected literal, identifier or unary op",
+                                "expected literal, identifier or unary op"
+                                    .to_string(),
                             ));
                         }
                     };
@@ -796,7 +813,7 @@ impl Parser {
                 k => {
                     return Err(self.err_hint(
                         UnexpectedToken(k),
-                        "expected literal, identifier or unary op",
+                        "expected literal, identifier or unary op".to_string(),
                     ))
                 }
             },
@@ -806,7 +823,8 @@ impl Parser {
             TokTree::Delim(dn) => {
                 return Err(self.err_hint(
                     UnexpectedOpenDelim(dn.delim),
-                    "expression may not contain delimiters except parenthesis",
+                    "expression may not contain delimiters except parenthesis"
+                        .to_string(),
                 ));
             }
         };
@@ -925,7 +943,7 @@ impl Parser {
         }
     }
 
-    fn err_hint(&self, kind: PErrorKind, hint: &'static str) -> PError {
+    fn err_hint(&self, kind: PErrorKind, hint: String) -> PError {
         PError {
             kind,
             span: self.span,

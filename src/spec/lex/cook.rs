@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::{Sym, SymbolTable};
 
 use super::raw;
@@ -62,6 +64,12 @@ pub enum Keyword {
     In,
     Constrain,
     Debug,
+}
+
+impl fmt::Display for Keyword {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", format!("{:?}", self).to_lowercase())
+    }
 }
 
 #[derive(Clone, Debug)]

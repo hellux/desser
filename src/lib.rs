@@ -43,7 +43,7 @@ pub struct Error {
     pub span: Span,
     pub backtrace: Vec<(u32, Option<Sym>, binary::BitPos)>,
     pub desc: String,
-    pub hint: Option<&'static str>,
+    pub hint: Option<String>,
     pub ty: ErrorType,
 }
 
@@ -96,7 +96,7 @@ impl Error {
             s = ind,
             c = c0 as usize - 1
         );
-        if let Some(hint) = self.hint {
+        if let Some(hint) = &self.hint {
             eprintln!(
                 "{:s$} \x1b[1;34m= \x1b[0;1mhint\x1b[0m: {}",
                 "",
