@@ -293,25 +293,6 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 let part = self.eval_partial(expr)?;
                 self.scope.insert_local(*sym, part);
             }
-            ast::Stmt::If(if_stmt) => {
-                let body = if self.eval_nonzero(&if_stmt.cond)? {
-                    &if_stmt.if_body
-                } else {
-                    let mut i = 0;
-                    loop {
-                        if let Some((c, b)) = if_stmt.elseifs.get(i) {
-                            if self.eval_nonzero(c)? {
-                                break b;
-                            }
-                            i += 1;
-                        } else {
-                            break &if_stmt.else_body;
-                        }
-                    }
-                };
-
-                self.parse_block(body)?;
-            }
             ast::Stmt::Constrain(exprs) => {
                 for expr in exprs {
                     if !self.eval_nonzero(expr)? {
@@ -391,6 +372,14 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 self.seek(ptr.start + ptr.pty.size())?;
                 NameField::Prim(ptr)
             }
+            ast::FieldKind::If(if_type) => {
+                if self.eval_nonzero(&if_type.cond)? {
+                    self.parse_field_type(&if_type.if_type)?
+                } else {
+                    self.parse_field_type(&if_type.else_type)?
+                }
+            }
+            ast::FieldKind::Null => NameField::Null,
         };
 
         for constraint in &ty.constraints {

@@ -19,17 +19,8 @@ pub type Block = Vec<Stmt>;
 pub enum Stmt {
     Field(Field),
     Let(Sym, Expr),
-    If(IfStmt),
     Constrain(Vec<Expr>),
     Debug(Vec<Expr>),
-}
-
-#[derive(Clone, Debug)]
-pub struct IfStmt {
-    pub cond: Expr,
-    pub if_body: Block,
-    pub elseifs: Vec<(Expr, Block)>,
-    pub else_body: Block,
 }
 
 #[derive(Clone, Debug)]
@@ -78,6 +69,8 @@ pub enum FieldKind {
     Array(Array),
     Struct(SpannedSym, Vec<Expr>),
     Block(Block),
+    If(IfType),
+    Null,
 }
 
 pub type PrimType = crate::PrimType<Expr>;
@@ -106,6 +99,33 @@ pub enum ArraySize {
     Exactly(Expr),
     Within(Expr, Expr),
     AtLeast(Expr),
+}
+
+#[derive(Clone, Debug)]
+pub struct IfType {
+    pub cond: Expr,
+    pub if_type: Box<FieldType>,
+    pub else_type: Box<FieldType>,
+}
+
+impl FieldType {
+    pub fn null() -> Self {
+        FieldType {
+            kind: FieldKind::Null,
+            byte_order: Order::LittleEndian,
+            bit_order: Order::LittleEndian,
+            loc: Location {
+                expr: None,
+                base: AddrBase::Absolute,
+                bitwise: false,
+            },
+            alignment: Alignment {
+                expr: None,
+                bitwise: false,
+            },
+            constraints: Vec::new(),
+        }
+    }
 }
 
 /* Expressions */

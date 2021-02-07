@@ -278,50 +278,51 @@ impl Parser {
             }) = stream.peek().unwrap()
             {
                 let kw = *kw;
-                self.eat(&mut stream)?; // keyword
                 match kw {
                     Keyword::Let => {
+                        self.eat(&mut stream)?; // keyword
                         let (id, expr) = self.parse_assign(&mut stream)?;
                         stmts.push(ast::Stmt::Let(id, expr));
-                    }
-                    Keyword::If => {
-                        stmts.push(ast::Stmt::If(self.parse_if(&mut stream)?));
+                        continue;
                     }
                     Keyword::Constrain => {
+                        self.eat(&mut stream)?; // keyword
                         self.eat(&mut stream)?; // block
                         let dn = self.expect_delim()?;
                         stmts.push(ast::Stmt::Constrain(
                             self.parse_expr_list(dn.stream)?,
                         ));
+                        continue;
                     }
                     Keyword::Debug => {
+                        self.eat(&mut stream)?; // keyword
                         self.eat(&mut stream)?; // block
                         let dn = self.expect_delim()?;
                         stmts.push(ast::Stmt::Debug(
                             self.parse_expr_list(dn.stream)?,
                         ));
+                        continue;
                     }
                     Keyword::Def | Keyword::Const => {
+                        self.eat(&mut stream)?; // keyword
                         return Err(self.err_hint(
                             UnexpectedKeyword(kw),
                             "may only be defined in struct header".to_string(),
                         ));
                     }
-                    _ => {
-                        return Err(self.err(UnexpectedKeyword(kw)));
-                    }
+                    _ => {}
                 }
-            } else {
-                let field_stream = stream.eat_until(Symbol::Comma);
-                if stream.not_empty() {
-                    self.eat(&mut stream)?; // comma, trailing is optional
-                }
+            }
 
-                if field_stream.not_empty() {
-                    stmts.push(ast::Stmt::Field(
-                        self.parse_struct_field(field_stream)?,
-                    ));
-                }
+            let field_stream = stream.eat_until_sym(Symbol::Comma);
+            if stream.not_empty() {
+                self.eat(&mut stream)?; // comma, trailing is optional
+            }
+
+            if field_stream.not_empty() {
+                stmts.push(ast::Stmt::Field(
+                    self.parse_struct_field(field_stream)?,
+                ));
             }
         }
 
@@ -336,7 +337,7 @@ impl Parser {
         let id = self.expect_ident()?;
         self.eat(stream)?; // =
         self.assert_symbol(Symbol::Eq)?;
-        let expr_stream = stream.eat_until(Symbol::Comma);
+        let expr_stream = stream.eat_until_sym(Symbol::Comma);
         if stream.not_empty() {
             self.eat(stream)?; // comma
         }
@@ -344,87 +345,31 @@ impl Parser {
         Ok((id, expr))
     }
 
-    fn parse_if(&mut self, stream: &mut TokenStream) -> PResult<ast::IfStmt> {
-        self.eat(stream)?; // cond delim
-        let dn = self.expect_delim()?;
-        let cond = if dn.delim == Paren {
-            self.parse_expr(dn.stream)?
-        } else {
-            return Err(self.err_hint(
-                UnexpectedOpenDelim(dn.delim),
-                "expected condition after if".to_string(),
-            ));
-        };
+    fn parse_if(&mut self, stream: &mut TokenStream) -> PResult<ast::IfType> {
+        let cond_stream = stream.eat_until_kw(Keyword::Then);
+        let cond = self.parse_expr(cond_stream)?;
+        self.eat(stream)?; // then kw
+        self.assert_keyword(Keyword::Then)?;
 
-        self.eat(stream)?; // if body delim
-        let dn = self.expect_delim()?;
-        let if_body = if dn.delim == Brace {
-            self.parse_block(dn.stream)?
-        } else {
-            return Err(self.err_hint(
-                UnexpectedOpenDelim(dn.delim),
-                "expected body after if".to_string(),
-            ));
-        };
-
-        let mut elseifs = Vec::new();
-        let else_body = loop {
+        let if_type = Box::new(self.parse_field_type(stream)?);
+        let else_type = Box::new(
             if let Some(TokTree::Token(Token {
                 kind: TokKind::Keyword(Keyword::Else),
                 ..
             })) = stream.peek()
             {
-                self.eat(stream)?; // else
-                let cond_opt = if let Some(TokTree::Token(Token {
-                    kind: TokKind::Keyword(Keyword::If),
-                    ..
-                })) = stream.peek()
-                {
-                    // else if
-                    self.eat(stream)?; // if
-                    self.eat(stream)?; // condition delim
-                    let dn = self.expect_delim()?;
-                    let cond = if dn.delim == Paren {
-                        self.parse_expr(dn.stream)?
-                    } else {
-                        return Err(self.err_hint(
-                            UnexpectedOpenDelim(dn.delim),
-                            "expected condition after else if".to_string(),
-                        ));
-                    };
-                    Some(cond)
-                } else {
-                    // else (has no condition)
-                    None
-                };
-
-                self.eat(stream)?; // body delim
-                let dn = self.expect_delim()?;
-                let body = if dn.delim == Brace {
-                    self.parse_block(dn.stream)?
-                } else {
-                    return Err(self.err_hint(
-                        UnexpectedOpenDelim(dn.delim),
-                        "expected body after if/else".to_string(),
-                    ));
-                };
-
-                if let Some(cond) = cond_opt {
-                    elseifs.push((cond, body));
-                } else {
-                    break body;
-                }
+                self.eat(stream)?; // else kw
+                self.assert_keyword(Keyword::Else)?;
+                self.parse_field_type(stream)?
             } else {
-                // other, does not belong to if statement
-                break vec![];
-            }
-        };
+                ast::FieldType::null()
+            },
+        );
 
-        Ok(ast::IfStmt {
+        Ok(ast::IfType {
             cond,
-            if_body,
-            elseifs,
-            else_body,
+            if_type,
+            else_type,
         })
     }
 
@@ -498,30 +443,19 @@ impl Parser {
         &mut self,
         stream: &mut TokenStream,
     ) -> PResult<ast::FieldType> {
-        let mut byte_order = Order::LittleEndian;
-        let mut bit_order = Order::LittleEndian;
-        let mut alignment = ast::Alignment {
-            expr: None,
-            bitwise: false,
-        };
-        let mut loc = ast::Location {
-            expr: None,
-            base: AddrBase::Absolute,
-            bitwise: false,
-        };
-        let mut constraints = Vec::new();
+        let mut ft = ast::FieldType::null();
         let props = self.parse_properties(stream)?;
         for (prop, mut args) in props {
             match prop {
                 Property::Align(bitwise) => {
-                    alignment = ast::Alignment {
+                    ft.alignment = ast::Alignment {
                         expr: Some(self.parse_expr(args.remove(0))?),
                         bitwise,
                     }
                 }
                 Property::Location { base, bitwise } => {
                     let expr = Some(self.parse_expr(args.remove(0))?);
-                    loc = ast::Location {
+                    ft.loc = ast::Location {
                         expr,
                         base,
                         bitwise,
@@ -546,8 +480,8 @@ impl Parser {
                         }
                     };
                     match ord {
-                        Property::ByteOrder => byte_order = order,
-                        Property::BitOrder => bit_order = order,
+                        Property::ByteOrder => ft.byte_order = order,
+                        Property::BitOrder => ft.bit_order = order,
                         _ => unreachable!(),
                     }
                 }
@@ -562,7 +496,7 @@ impl Parser {
                             self.parse_expr(args.remove(0))?,
                         ),
                     };
-                    constraints.push(c);
+                    ft.constraints.push(c);
                 }
             }
 
@@ -576,6 +510,12 @@ impl Parser {
 
         self.eat(stream)?;
         let kind = match self.tree.take() {
+            TokTree::Token(Token {
+                kind: TokKind::Keyword(kw),
+                ..
+            }) if kw == Keyword::If => {
+                ast::FieldKind::If(self.parse_if(stream)?)
+            }
             TokTree::Token(Token {
                 kind: TokKind::Ident(id),
                 ..
@@ -605,7 +545,7 @@ impl Parser {
                     } else if parts.len() == 2
                         && (ord == Some(&"le") || ord == Some(&"be"))
                     {
-                        byte_order = match *ord.unwrap() {
+                        ft.byte_order = match *ord.unwrap() {
                             "le" => Order::LittleEndian,
                             "be" => Order::BigEndian,
                             _ => unreachable!(),
@@ -632,14 +572,8 @@ impl Parser {
             }
         };
 
-        Ok(ast::FieldType {
-            kind,
-            byte_order,
-            bit_order,
-            loc,
-            alignment,
-            constraints,
-        })
+        ft.kind = kind;
+        Ok(ft)
     }
 
     fn parse_expr_list(
@@ -673,7 +607,7 @@ impl Parser {
         &mut self,
         mut stream: TokenStream,
     ) -> PResult<ast::StdArray> {
-        let mut type_stream = stream.eat_until(Symbol::SemiColon);
+        let mut type_stream = stream.eat_until_sym(Symbol::SemiColon);
         if stream.not_empty() {
             self.eat(&mut stream)?; // semicolon, optional if no specified size
         }
@@ -723,7 +657,7 @@ impl Parser {
                     let dn = self.expect_delim()?;
                     let mut bounds_stream = dn.stream;
 
-                    let lb_stream = bounds_stream.eat_until(Symbol::Comma);
+                    let lb_stream = bounds_stream.eat_until_sym(Symbol::Comma);
                     let lower_bound = self.parse_expr(lb_stream)?;
                     self.eat(&mut bounds_stream)?; // comma
 

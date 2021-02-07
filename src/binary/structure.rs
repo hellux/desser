@@ -62,6 +62,7 @@ impl TryFrom<NameField> for StructField {
             NameField::Prim(ptr) => Ok(StructField::Prim(ptr)),
             NameField::Struct(nst) => nst.try_into(),
             NameField::Array(narr) => narr.try_into(),
+            NameField::Null => Err(()),
         }
     }
 }

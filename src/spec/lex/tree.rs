@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use crate::SymbolTable;
 
 use super::cook::{Delim, TokKind, Token, TokenCooker};
-use super::{Error, LError, LErrorKind, LResult, Span, Symbol};
+use super::{Error, Keyword, LError, LErrorKind, LResult, Span, Symbol};
 
 #[derive(Debug, Clone)]
 pub enum TokTree {
@@ -59,7 +59,7 @@ impl TokenStream {
         let mut streams = Vec::new();
 
         while self.not_empty() {
-            let stream = self.eat_until(sep);
+            let stream = self.eat_until_sym(sep);
             if stream.not_empty() {
                 self.eat(); // throw away separator
             }
@@ -69,15 +69,15 @@ impl TokenStream {
         streams
     }
 
-    pub fn eat_until(&mut self, symbol: Symbol) -> Self {
+    pub fn eat_while<P>(&mut self, pred: &mut P) -> Self
+    where
+        P: FnMut(&TokKind) -> bool,
+    {
         let mut i: usize = 0;
 
         loop {
             match self.0.get(i) {
-                Some(TokTree::Token(Token {
-                    kind: TokKind::Symbol(s),
-                    ..
-                })) if *s == symbol => break,
+                Some(TokTree::Token(token)) if !pred(&token.kind) => break,
                 None => break,
                 _ => {}
             }
@@ -88,6 +88,18 @@ impl TokenStream {
         let eaten = std::mem::replace(&mut self.0, remaining);
 
         TokenStream(eaten)
+    }
+
+    pub fn eat_until_sym(&mut self, symbol: Symbol) -> Self {
+        self.eat_while(
+            &mut |t| !matches!(t, TokKind::Symbol(s) if *s == symbol),
+        )
+    }
+
+    pub fn eat_until_kw(&mut self, keyword: Keyword) -> Self {
+        self.eat_while(
+            &mut |t| !matches!(t, TokKind::Keyword(kw) if *kw == keyword),
+        )
     }
 
     pub fn not_empty(&self) -> bool {

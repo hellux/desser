@@ -170,6 +170,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                         *size,
                     )
                 }
+                NameField::Null => return None,
             },
             _ => return None,
         })
