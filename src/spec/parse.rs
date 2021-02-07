@@ -540,6 +540,9 @@ impl Parser {
                     ("i64", []) => ast::FieldKind::Prim(ast::PrimType::I64),
                     ("f32", []) => ast::FieldKind::Prim(ast::PrimType::F32),
                     ("f64", []) => ast::FieldKind::Prim(ast::PrimType::F64),
+                    ("bit", []) => ast::FieldKind::Prim(
+                        ast::PrimType::BitVec(ast::Expr::int(1, self.span)),
+                    ),
                     ("bitvec", [len]) => ast::FieldKind::Prim(
                         ast::PrimType::BitVec(len.clone()),
                     ),
