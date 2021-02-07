@@ -163,7 +163,7 @@ enum BuiltInAttr {
 }
 
 const IDENTIFIERS: [(BuiltInIdent, &str); 2] = [
-    (BuiltInIdent::IdSelf, "self"),
+    (BuiltInIdent::IdSelf, "#self"),
     (BuiltInIdent::Super, "super"),
 ];
 const PROPERTIES: [(BuiltInProp, &str); 19] = [
