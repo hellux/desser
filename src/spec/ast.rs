@@ -49,6 +49,11 @@ pub struct Field {
 #[derive(Clone, Debug)]
 pub struct FieldType {
     pub kind: FieldKind,
+    pub properties: Properties,
+}
+
+#[derive(Clone, Debug)]
+pub struct Properties {
     pub byte_order: Order,
     pub bit_order: Order,
     pub loc: Location,
@@ -112,6 +117,14 @@ impl FieldType {
     pub fn null() -> Self {
         FieldType {
             kind: FieldKind::Null,
+            properties: Properties::default(),
+        }
+    }
+}
+
+impl Default for Properties {
+    fn default() -> Self {
+        Properties {
             byte_order: Order::LittleEndian,
             bit_order: Order::LittleEndian,
             loc: Location {

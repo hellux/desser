@@ -398,56 +398,55 @@ impl Parser {
         })
     }
 
+    fn parse_field_type(
+        &mut self,
+        stream: &mut TokenStream,
+    ) -> PResult<ast::FieldType> {
+        let properties = self.parse_properties(stream)?;
+        let kind = self.parse_field_kind(stream)?;
+
+        Ok(ast::FieldType { kind, properties })
+    }
+
     fn parse_properties(
         &mut self,
         stream: &mut TokenStream,
-    ) -> PResult<Vec<(Property, Vec<TokenStream>)>> {
-        let mut properties = Vec::new();
-
+    ) -> PResult<ast::Properties> {
+        let mut props = ast::Properties::default();
         while let Some(TokTree::Token(Token {
             kind: TokKind::Ident(sym),
             ..
         })) = stream.peek()
         {
-            if let Some(bip) = self.symtab.property(*sym) {
-                let prop: Property = bip.into();
-                self.eat(stream)?; // prop ident
-                let argstream = if let Some(TokTree::Delim(DelimNode {
-                    delim: Paren,
-                    ..
-                })) = stream.peek()
-                {
-                    self.eat(stream)?; // arguments
-                    self.expect_delim()?.stream.split_on(Symbol::Comma)
+            let (prop, mut args) =
+                if let Some(bip) = self.symtab.property(*sym) {
+                    let prop: Property = bip.into();
+                    self.eat(stream)?; // prop ident
+                    let argstream = if let Some(TokTree::Delim(DelimNode {
+                        delim: Paren,
+                        ..
+                    })) = stream.peek()
+                    {
+                        self.eat(stream)?; // arguments
+                        self.expect_delim()?.stream.split_on(Symbol::Comma)
+                    } else {
+                        vec![]
+                    };
+                    (prop, argstream)
                 } else {
-                    vec![]
+                    break;
                 };
-                properties.push((prop, argstream));
-            } else {
-                break;
-            }
-        }
 
-        Ok(properties)
-    }
-
-    fn parse_field_type(
-        &mut self,
-        stream: &mut TokenStream,
-    ) -> PResult<ast::FieldType> {
-        let mut ft = ast::FieldType::null();
-        let props = self.parse_properties(stream)?;
-        for (prop, mut args) in props {
             match prop {
                 Property::Align(bitwise) => {
-                    ft.alignment = ast::Alignment {
+                    props.alignment = ast::Alignment {
                         expr: Some(self.parse_expr(args.remove(0))?),
                         bitwise,
                     }
                 }
                 Property::Location { base, bitwise } => {
                     let expr = Some(self.parse_expr(args.remove(0))?);
-                    ft.loc = ast::Location {
+                    props.loc = ast::Location {
                         expr,
                         base,
                         bitwise,
@@ -472,8 +471,8 @@ impl Parser {
                         }
                     };
                     match ord {
-                        Property::ByteOrder => ft.byte_order = order,
-                        Property::BitOrder => ft.bit_order = order,
+                        Property::ByteOrder => props.byte_order = order,
+                        Property::BitOrder => props.bit_order = order,
                         _ => unreachable!(),
                     }
                 }
@@ -488,7 +487,7 @@ impl Parser {
                             self.parse_expr(args.remove(0))?,
                         ),
                     };
-                    ft.constraints.push(c);
+                    props.constraints.push(c);
                 }
             }
 
@@ -500,8 +499,15 @@ impl Parser {
             }
         }
 
+        Ok(props)
+    }
+
+    fn parse_field_kind(
+        &mut self,
+        stream: &mut TokenStream,
+    ) -> PResult<ast::FieldKind> {
         self.eat(stream)?;
-        let kind = match self.tree.take() {
+        Ok(match self.tree.take() {
             TokTree::Token(Token {
                 kind: TokKind::Keyword(kw),
                 ..
@@ -512,10 +518,6 @@ impl Parser {
                 kind: TokKind::Ident(id),
                 ..
             }) => {
-                let ssym = SpannedSym {
-                    span: self.span,
-                    sym: id,
-                };
                 let params = match stream.peek() {
                     Some(TokTree::Delim(dn)) if dn.delim == Paren => {
                         self.eat(stream)?;
@@ -525,32 +527,30 @@ impl Parser {
                     _ => vec![],
                 };
 
-                let parts: Vec<_> =
-                    self.symtab.name(id).unwrap().split('_').collect();
-                let ident = parts[0];
-                let ord = parts.get(1);
-                let kind = if let Some(kind) =
-                    alias_field_kind(ident, params.as_slice())
-                {
-                    if parts.len() == 1 {
-                        kind
-                    } else if parts.len() == 2
-                        && (ord == Some(&"le") || ord == Some(&"be"))
-                    {
-                        ft.byte_order = match *ord.unwrap() {
-                            "le" => Order::LittleEndian,
-                            "be" => Order::BigEndian,
-                            _ => unreachable!(),
+                let name = self.symtab.name(id).unwrap();
+                match (name, params.as_slice()) {
+                    ("char", []) => ast::FieldKind::Prim(ast::PrimType::Char),
+                    ("u8", []) => ast::FieldKind::Prim(ast::PrimType::U8),
+                    ("i8", []) => ast::FieldKind::Prim(ast::PrimType::I8),
+                    ("u16", []) => ast::FieldKind::Prim(ast::PrimType::U16),
+                    ("i16", []) => ast::FieldKind::Prim(ast::PrimType::I16),
+                    ("u32", []) => ast::FieldKind::Prim(ast::PrimType::U32),
+                    ("i32", []) => ast::FieldKind::Prim(ast::PrimType::I32),
+                    ("u64", []) => ast::FieldKind::Prim(ast::PrimType::U64),
+                    ("i64", []) => ast::FieldKind::Prim(ast::PrimType::I64),
+                    ("f32", []) => ast::FieldKind::Prim(ast::PrimType::F32),
+                    ("f64", []) => ast::FieldKind::Prim(ast::PrimType::F64),
+                    ("bitvec", [len]) => ast::FieldKind::Prim(
+                        ast::PrimType::BitVec(len.clone()),
+                    ),
+                    _ => {
+                        let ssym = SpannedSym {
+                            span: self.span,
+                            sym: id,
                         };
-                        kind
-                    } else {
                         ast::FieldKind::Struct(ssym, params)
                     }
-                } else {
-                    ast::FieldKind::Struct(ssym, params)
-                };
-
-                kind
+                }
             }
             TokTree::Delim(dn) if dn.delim == Bracket => {
                 ast::FieldKind::Array(self.parse_array_type(dn.stream)?)
@@ -562,10 +562,7 @@ impl Parser {
                 return Err(self
                     .err_hint(Unexpected, "expected field type".to_string()))
             }
-        };
-
-        ft.kind = kind;
-        Ok(ft)
+        })
     }
 
     fn parse_expr_list(
@@ -943,29 +940,4 @@ pub enum Constr {
     Generic,
     Binary(ast::BinOp),
     Zero(bool),
-}
-
-fn alias_field_kind(
-    alias: &str,
-    params: &[ast::Expr],
-) -> Option<ast::FieldKind> {
-    let kind = match (alias, params) {
-        ("char", []) => ast::FieldKind::Prim(ast::PrimType::Char),
-        ("u8", []) => ast::FieldKind::Prim(ast::PrimType::U8),
-        ("i8", []) => ast::FieldKind::Prim(ast::PrimType::I8),
-        ("u16", []) => ast::FieldKind::Prim(ast::PrimType::U16),
-        ("i16", []) => ast::FieldKind::Prim(ast::PrimType::I16),
-        ("u32", []) => ast::FieldKind::Prim(ast::PrimType::U32),
-        ("i32", []) => ast::FieldKind::Prim(ast::PrimType::I32),
-        ("u64", []) => ast::FieldKind::Prim(ast::PrimType::U64),
-        ("i64", []) => ast::FieldKind::Prim(ast::PrimType::I64),
-        ("f32", []) => ast::FieldKind::Prim(ast::PrimType::F32),
-        ("f64", []) => ast::FieldKind::Prim(ast::PrimType::F64),
-        ("bitvec", [len]) => {
-            ast::FieldKind::Prim(ast::PrimType::BitVec(len.clone()))
-        }
-        _ => return None,
-    };
-
-    Some(kind)
 }

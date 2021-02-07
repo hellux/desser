@@ -335,8 +335,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn parse_field_type(&mut self, ty: &ast::FieldType) -> SResult<NameField> {
-        self.seek_loc(&ty.loc)?;
-        self.align(&ty.alignment)?;
+        self.seek_loc(&ty.properties.loc)?;
+        self.align(&ty.properties.alignment)?;
 
         let nf = match &ty.kind {
             ast::FieldKind::Array(arr) => NameField::Array(match arr {
@@ -366,8 +366,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 let ptr = Ptr {
                     start: self.pos,
                     pty: spty,
-                    byte_order: ty.byte_order,
-                    bit_order: ty.bit_order,
+                    byte_order: ty.properties.byte_order,
+                    bit_order: ty.properties.bit_order,
                 };
                 self.seek(ptr.start + ptr.pty.size())?;
                 NameField::Prim(ptr)
@@ -382,7 +382,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             ast::FieldKind::Null => NameField::Null,
         };
 
-        for constraint in &ty.constraints {
+        for constraint in &ty.properties.constraints {
             self.scope.enter_selfscope(unsafe {
                 std::mem::transmute::<&NameField, &'s NameField>(&nf)
             });
