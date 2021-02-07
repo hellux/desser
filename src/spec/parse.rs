@@ -268,65 +268,57 @@ impl Parser {
         })
     }
 
-    fn parse_block(&mut self, mut stream: TokenStream) -> PResult<ast::Block> {
-        let mut stmts = Vec::new();
-
-        while stream.not_empty() {
-            if let TokTree::Token(Token {
-                kind: TokKind::Keyword(kw),
-                ..
-            }) = stream.peek().unwrap()
-            {
-                let kw = *kw;
-                match kw {
-                    Keyword::Let => {
-                        self.eat(&mut stream)?; // keyword
-                        let (id, expr) = self.parse_assign(&mut stream)?;
-                        stmts.push(ast::Stmt::Let(id, expr));
-                        continue;
+    fn parse_block(&mut self, stream: TokenStream) -> PResult<ast::Block> {
+        stream
+            .split_on(Symbol::Comma)
+            .into_iter()
+            .map(move |mut stmt_stream| {
+                if let TokTree::Token(Token {
+                    kind: TokKind::Keyword(kw),
+                    ..
+                }) = &stmt_stream.peek().unwrap()
+                {
+                    let kw = *kw;
+                    match kw {
+                        Keyword::Let => {
+                            self.eat(&mut stmt_stream)?; // keyword
+                            let (id, expr) =
+                                self.parse_assign(&mut stmt_stream)?;
+                            return Ok(ast::Stmt::Let(id, expr));
+                        }
+                        Keyword::Constrain => {
+                            self.eat(&mut stmt_stream)?; // keyword
+                            self.eat(&mut stmt_stream)?; // block
+                            let dn = self.expect_delim()?;
+                            return Ok(ast::Stmt::Constrain(
+                                self.parse_expr_list(dn.stream)?,
+                            ));
+                        }
+                        Keyword::Debug => {
+                            self.eat(&mut stmt_stream)?; // keyword
+                            self.eat(&mut stmt_stream)?; // block
+                            let dn = self.expect_delim()?;
+                            return Ok(ast::Stmt::Debug(
+                                self.parse_expr_list(dn.stream)?,
+                            ));
+                        }
+                        Keyword::Def | Keyword::Const => {
+                            self.eat(&mut stmt_stream)?; // keyword
+                            return Err(self.err_hint(
+                                UnexpectedKeyword(kw),
+                                format!(
+                                    "{} may only be used in struct header",
+                                    kw
+                                ),
+                            ));
+                        }
+                        _ => {}
                     }
-                    Keyword::Constrain => {
-                        self.eat(&mut stream)?; // keyword
-                        self.eat(&mut stream)?; // block
-                        let dn = self.expect_delim()?;
-                        stmts.push(ast::Stmt::Constrain(
-                            self.parse_expr_list(dn.stream)?,
-                        ));
-                        continue;
-                    }
-                    Keyword::Debug => {
-                        self.eat(&mut stream)?; // keyword
-                        self.eat(&mut stream)?; // block
-                        let dn = self.expect_delim()?;
-                        stmts.push(ast::Stmt::Debug(
-                            self.parse_expr_list(dn.stream)?,
-                        ));
-                        continue;
-                    }
-                    Keyword::Def | Keyword::Const => {
-                        self.eat(&mut stream)?; // keyword
-                        return Err(self.err_hint(
-                            UnexpectedKeyword(kw),
-                            "may only be defined in struct header".to_string(),
-                        ));
-                    }
-                    _ => {}
                 }
-            }
 
-            let field_stream = stream.eat_until_sym(Symbol::Comma);
-            if stream.not_empty() {
-                self.eat(&mut stream)?; // comma, trailing is optional
-            }
-
-            if field_stream.not_empty() {
-                stmts.push(ast::Stmt::Field(
-                    self.parse_struct_field(field_stream)?,
-                ));
-            }
-        }
-
-        Ok(stmts)
+                Ok(ast::Stmt::Field(self.parse_struct_field(stmt_stream)?))
+            })
+            .collect()
     }
 
     fn parse_assign(
