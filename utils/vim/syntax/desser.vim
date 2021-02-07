@@ -3,20 +3,18 @@
 " License: Vim
 
 syn keyword dsrStmt constrain debug
-syn keyword dsrConditional if else
-syn keyword dsrLoop for in
+syn keyword dsrConditional if then else
+syn keyword dsrLoop for in repeat
 syn keyword dsrLet let const
 syn keyword dsrDef def nextgroup=dsrStruct skipwhite
-syn keyword dsrProp addr skip align baddr boffset bskip balign order
+syn keyword dsrProp addr skip align baddr boffset bskip balign order border
 syn match dsrProp "\(^\|[^']\)\<offset\>"
 syn keyword dsrConstraint constraint eq neq lt gt leq geq zero nonzero
 syn match dsrStruct "\h\w*" display contained
 
-syn keyword dsrPrim char bitvec u8 u16 u32 u64 i8 i16 i32 i64 f32 f64
-syn keyword dsrPrim bitvec_le u8_le u16_le u32_le u64_le i8_le i16_le i32_le i64_le f32_le f64_le
-syn keyword dsrPrim bitvec_be u8_be u16_be u32_be u64_be i8_be i16_be i32_be i64_be f32_be f64_be
+syn keyword dsrPrim char bitvec bit u8 u16 u32 u64 i8 i16 i32 i64 f32 f64
 
-syn match dsrAttribute display /\>'\(start\|size\|end\|offset\|length\)\>/ms=s+1
+syn match dsrAttribute display /\>'\(start\|size\|end\|offset\|length\)\>/
 syn match dsrBin display "\<0b[0-1][0-1_]*+"
 syn match dsrOct display "\<0o[0-7][0-7_]*+"
 syn match dsrDec display "\<[0-9][0-9_]*"
