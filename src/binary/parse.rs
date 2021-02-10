@@ -2,7 +2,7 @@ use std::convert::TryFrom;
 use std::io::{BufRead, Seek, SeekFrom};
 
 use super::error::{EErrorKind, EResult, SError, SErrorKind, SResult};
-use super::eval::{IntVal, Partial, Val};
+use super::eval::{Eval, IntVal, Partial, Val};
 use super::scope::{
     IndexSpace, Name, NameArray, NameField, NameStruct, Namespace, Scope,
 };
@@ -116,36 +116,22 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         Ok(())
     }
 
-    fn eval(&mut self, expr: &ast::Expr) -> EResult<Val> {
-        eval::eval(expr, self.f, &self.scope, &self.symtab)
-    }
-
     fn eval_size(&mut self, expr: &ast::Expr) -> EResult<IntVal> {
-        match self.eval(expr)? {
+        let val = Eval::new(self.f, &self.scope, &self.symtab).eval(expr)?;
+        match val {
             Val::Integer(size) if size >= 0 => Ok(size),
             Val::Integer(_neg) => Err(expr.err(EErrorKind::NegativeSize)),
             _ => Err(expr.err(EErrorKind::NonIntegerSize)),
         }
     }
 
-    fn eval_nonzero(&mut self, expr: &ast::Expr) -> SResult<bool> {
-        match self.eval(expr)? {
-            Val::Integer(i) => Ok(i != 0),
-            Val::Float(f) => Ok(f != 0.0),
-            Val::Compound(data, _) => {
-                for d in data {
-                    if d != 0 {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
-        }
+    fn eval_nonzero(&mut self, expr: &ast::Expr) -> EResult<bool> {
+        Eval::new(self.f, &self.scope, &self.symtab).eval_nonzero(expr)
     }
 
     fn eval_partial(&mut self, expr: &ast::Expr) -> SResult<Partial<'s>> {
         let part =
-            eval::eval_partial(expr, self.f, &self.scope, &self.symtab)?;
+            Eval::new(self.f, &self.scope, &self.symtab).eval_partial(expr)?;
         // name is never removed and namespace outlives 's
         Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
     }
@@ -374,9 +360,9 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             }
             ast::FieldKind::If(if_type) => {
                 if self.eval_nonzero(&if_type.cond)? {
-                    self.parse_field_type(&if_type.if_type)?
+                    self.parse_field_type(&if_type.if_res)?
                 } else {
-                    self.parse_field_type(&if_type.else_type)?
+                    self.parse_field_type(&if_type.else_res)?
                 }
             }
             ast::FieldKind::Null => NameField::Null,

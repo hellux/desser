@@ -8,24 +8,6 @@ use super::error::{EError, EErrorKind, EResult};
 use super::scope::{Name, NameArray, NameField, NameStruct, Scope};
 use super::*;
 
-pub(super) fn eval<'a, R: Read + Seek>(
-    expr: &'a Expr,
-    f: &mut R,
-    scope: &Scope,
-    symtab: &'a SymbolTable,
-) -> EResult<Val> {
-    Eval::new(f, scope, symtab).eval(expr)
-}
-
-pub(super) fn eval_partial<'a, R: Read + Seek>(
-    expr: &'a Expr,
-    f: &'a mut R,
-    scope: &'a Scope<'a>,
-    symtab: &'a SymbolTable,
-) -> EResult<Partial<'a>> {
-    Eval::new(f, scope, symtab).eval_partial(expr)
-}
-
 pub type IntVal = i64;
 pub type FloatVal = f64;
 
@@ -78,14 +60,14 @@ impl Val {
     }
 }
 
-struct Eval<'a, R: Read + Seek> {
+pub(super) struct Eval<'a, R: Read + Seek> {
     f: &'a mut R,
     scope: &'a Scope<'a>,
     symtab: &'a SymbolTable,
 }
 
 impl<'a, R: Read + Seek> Eval<'a, R> {
-    fn new(
+    pub fn new(
         f: &'a mut R,
         scope: &'a Scope<'a>,
         symtab: &'a SymbolTable,
@@ -93,7 +75,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         Eval { f, scope, symtab }
     }
 
-    fn eval(&mut self, expr: &'a Expr) -> EResult<Val> {
+    pub fn eval(&mut self, expr: &'a Expr) -> EResult<Val> {
         match &expr.kind {
             ExprKind::Variable(_)
             | ExprKind::Member(_, _)
@@ -114,10 +96,11 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 self.eval_binary(*op, &lhs, &rhs)
             }
             ExprKind::Unary(op, expr) => self.eval_unary(*op, &expr),
+            ExprKind::If(if_case) => self.eval_if(if_case),
         }
     }
 
-    fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial<'a>> {
+    pub fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial<'a>> {
         Ok(match &expr.kind {
             ExprKind::Variable(sym) => {
                 Partial::Name(self.scope.get(*sym).ok_or_else(|| {
@@ -150,6 +133,21 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             }
             _ => Partial::Value(self.eval(expr)?),
         })
+    }
+
+    pub fn eval_nonzero(&mut self, expr: &'a Expr) -> EResult<bool> {
+        match self.eval(expr)? {
+            Val::Integer(i) => Ok(i != 0),
+            Val::Float(f) => Ok(f != 0.0),
+            Val::Compound(data, _) => {
+                for d in data {
+                    if d != 0 {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+        }
     }
 
     fn eval_name(&mut self, name: Name<'a>) -> Option<Val> {
@@ -283,6 +281,18 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 }
                 _ => Err(lhs.err(EErrorKind::UnaryCompound)),
             },
+        }
+    }
+
+    fn eval_if(
+        &mut self,
+        if_case: &'a ast::IfCase<ast::Expr>,
+    ) -> EResult<Val> {
+        let cond = self.eval_nonzero(&if_case.cond)?;
+        if cond {
+            self.eval(&if_case.if_res)
+        } else {
+            self.eval(&if_case.else_res)
         }
     }
 }

@@ -102,6 +102,10 @@ impl TokenStream {
         )
     }
 
+    pub fn consume(&mut self) -> Self {
+        self.eat_while(&mut |_| true)
+    }
+
     pub fn not_empty(&self) -> bool {
         !self.0.is_empty()
     }

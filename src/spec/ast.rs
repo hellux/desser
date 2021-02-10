@@ -74,7 +74,7 @@ pub enum FieldKind {
     Array(Array),
     Struct(SpannedSym, Vec<Expr>),
     Block(Block),
-    If(IfType),
+    If(IfCase<FieldType>),
     Null,
 }
 
@@ -107,10 +107,10 @@ pub enum ArraySize {
 }
 
 #[derive(Clone, Debug)]
-pub struct IfType {
-    pub cond: Expr,
-    pub if_type: Box<FieldType>,
-    pub else_type: Box<FieldType>,
+pub struct IfCase<T> {
+    pub cond: Box<Expr>,
+    pub if_res: Box<T>,
+    pub else_res: Box<T>,
 }
 
 impl FieldType {
@@ -159,6 +159,8 @@ pub enum ExprKind {
     Attr(Box<Expr>, SpannedSym),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Unary(UnOp, Box<Expr>),
+
+    If(IfCase<Expr>),
 }
 
 #[derive(Clone, Copy, Debug)]

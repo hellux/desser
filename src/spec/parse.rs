@@ -337,14 +337,17 @@ impl Parser {
         Ok((id, expr))
     }
 
-    fn parse_if(&mut self, stream: &mut TokenStream) -> PResult<ast::IfType> {
+    fn parse_if(
+        &mut self,
+        stream: &mut TokenStream,
+    ) -> PResult<ast::IfCase<ast::FieldType>> {
         let cond_stream = stream.eat_until_kw(Keyword::Then);
-        let cond = self.parse_expr(cond_stream)?;
+        let cond = Box::new(self.parse_expr(cond_stream)?);
         self.eat(stream)?; // then kw
         self.assert_keyword(Keyword::Then)?;
 
-        let if_type = Box::new(self.parse_field_type(stream)?);
-        let else_type = Box::new(
+        let if_res = Box::new(self.parse_field_type(stream)?);
+        let else_res = Box::new(
             if let Some(TokTree::Token(Token {
                 kind: TokKind::Keyword(Keyword::Else),
                 ..
@@ -358,10 +361,10 @@ impl Parser {
             },
         );
 
-        Ok(ast::IfType {
+        Ok(ast::IfCase {
             cond,
-            if_type,
-            else_type,
+            if_res,
+            else_res,
         })
     }
 
@@ -714,46 +717,7 @@ impl Parser {
     ) -> PResult<ast::Expr> {
         self.eat(stream)?;
         let mut lhs_span = self.tree.span();
-        let mut lhs_kind = match self.tree.take() {
-            TokTree::Token(token) => match token.kind {
-                TokKind::Symbol(Symbol::Dot) => ast::ExprKind::Variable(
-                    self.symtab.ident_sym(BuiltInIdent::IdSelf),
-                ),
-                TokKind::Literal(litkind) => ast::ExprKind::Literal(litkind),
-                TokKind::Ident(sym) => ast::ExprKind::Variable(sym),
-                TokKind::Symbol(s) => {
-                    let op = match s {
-                        Symbol::Minus => ast::UnOp::Neg,
-                        Symbol::Exclamation => ast::UnOp::Not,
-                        _ => {
-                            return Err(self.err_hint(
-                                UnexpectedSymbol(s),
-                                "expected literal, identifier or unary op"
-                                    .to_string(),
-                            ));
-                        }
-                    };
-                    let expr = self.parse_expr_fix(stream, op.fixity())?;
-                    ast::ExprKind::Unary(op, Box::new(expr))
-                }
-                k => {
-                    return Err(self.err_hint(
-                        UnexpectedToken(k),
-                        "expected literal, identifier or unary op".to_string(),
-                    ))
-                }
-            },
-            TokTree::Delim(dn) if dn.delim == Paren => {
-                self.parse_expr(dn.stream)?.kind
-            }
-            TokTree::Delim(dn) => {
-                return Err(self.err_hint(
-                    UnexpectedOpenDelim(dn.delim),
-                    "expression may not contain delimiters except parenthesis"
-                        .to_string(),
-                ));
-            }
-        };
+        let mut lhs_kind = self.parse_expr_lhs(stream)?;
         lhs_span.1 = self.tree.span().1;
 
         while stream.not_empty() {
@@ -858,6 +822,70 @@ impl Parser {
         Ok(ast::Expr {
             kind: lhs_kind,
             span: lhs_span,
+        })
+    }
+
+    fn parse_expr_lhs(
+        &mut self,
+        stream: &mut TokenStream,
+    ) -> PResult<ast::ExprKind> {
+        Ok(match self.tree.take() {
+            TokTree::Token(token) => match token.kind {
+                TokKind::Keyword(Keyword::If) => {
+                    let cond_stream = stream.eat_until_kw(Keyword::Then);
+                    self.eat(stream)?; // then
+                    self.assert_keyword(Keyword::Then)?;
+                    let cond = Box::new(self.parse_expr(cond_stream)?);
+                    let if_stream = stream.eat_until_kw(Keyword::Else);
+                    self.eat(stream)?; // else
+                    self.assert_keyword(Keyword::Else)?;
+                    let if_res = Box::new(self.parse_expr(if_stream)?);
+                    let else_res =
+                        Box::new(self.parse_expr(stream.consume())?);
+
+                    ast::ExprKind::If(ast::IfCase {
+                        cond,
+                        if_res,
+                        else_res,
+                    })
+                }
+                TokKind::Symbol(Symbol::Dot) => ast::ExprKind::Variable(
+                    self.symtab.ident_sym(BuiltInIdent::IdSelf),
+                ),
+                TokKind::Literal(litkind) => ast::ExprKind::Literal(litkind),
+                TokKind::Ident(sym) => ast::ExprKind::Variable(sym),
+                TokKind::Symbol(s) => {
+                    let op = match s {
+                        Symbol::Minus => ast::UnOp::Neg,
+                        Symbol::Exclamation => ast::UnOp::Not,
+                        _ => {
+                            return Err(self.err_hint(
+                                UnexpectedSymbol(s),
+                                "expected literal, identifier or unary op"
+                                    .to_string(),
+                            ));
+                        }
+                    };
+                    let expr = self.parse_expr_fix(stream, op.fixity())?;
+                    ast::ExprKind::Unary(op, Box::new(expr))
+                }
+                k => {
+                    return Err(self.err_hint(
+                        UnexpectedToken(k),
+                        "expected literal, identifier or unary op".to_string(),
+                    ))
+                }
+            },
+            TokTree::Delim(dn) if dn.delim == Paren => {
+                self.parse_expr(dn.stream)?.kind
+            }
+            TokTree::Delim(dn) => {
+                return Err(self.err_hint(
+                    UnexpectedOpenDelim(dn.delim),
+                    "expression may not contain delimiters except parenthesis"
+                        .to_string(),
+                ));
+            }
         })
     }
 
