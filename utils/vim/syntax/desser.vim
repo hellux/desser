@@ -15,12 +15,12 @@ syn match dsrStruct "\h\w*" display contained
 syn keyword dsrPrim char bitvec bit u8 u16 u32 u64 i8 i16 i32 i64 f32 f64
 
 syn match dsrAttribute display /\>'\(start\|size\|end\|offset\|length\)\>/
-syn match dsrBin display "\<0b[0-1][0-1_]*+"
-syn match dsrOct display "\<0o[0-7][0-7_]*+"
-syn match dsrDec display "\<[0-9][0-9_]*"
-syn match dsrHex display "\<0x[0-9a-f][0-9a-f_]*"
+syn match dsrBin display "\<0b[01_]\+\>"
+syn match dsrOct display "\<0o[0-7_]*+\>"
+syn match dsrDec display "\<[0-9][0-9_]*\>"
+syn match dsrHex display "\<0x[0-9a-f_]*\>"
 syn keyword dsrEndianness le be
-syn keyword dsrSelf self super
+syn keyword dsrSuper super
 syn match dsrEscape display contained /\\\([nrt0\\'"]\|x\x\{2}\)/
 syn region dsrString start=+"+ end=+"+ contains=dsrEscape
 
@@ -58,7 +58,7 @@ hi def link dsrOct Number
 hi def link dsrDec Number
 hi def link dsrHex Number
 hi def link dsrEndianness Constant
-hi def link dsrSelf Constant
+hi def link dsrSuper Constant
 
 hi def link dsrString String
 hi def link dsrEscape Special
