@@ -492,6 +492,10 @@ impl Parser {
                     };
                     props.constraints.push(c);
                 }
+                Property::Final => {
+                    props.fin =
+                        Some(Box::new(self.parse_expr(args.remove(0))?));
+                }
             }
 
             if !args.is_empty() {
@@ -916,6 +920,8 @@ impl From<BuiltInProp> for Property {
             BuiltInProp::Order => Self::ByteOrder,
             BuiltInProp::OrderBit => Self::BitOrder,
 
+            BuiltInProp::Final => Self::Final,
+
             BuiltInProp::Constraint => Self::Constr(Constr::Generic),
             BuiltInProp::Zero => Self::Constr(Constr::Zero(true)),
             BuiltInProp::NonZero => Self::Constr(Constr::Zero(false)),
@@ -960,6 +966,7 @@ impl From<BuiltInProp> for Property {
 #[derive(Copy, Clone, Debug)]
 enum Property {
     Align(bool),
+    Final,
     Constr(Constr),
     Location { base: AddrBase, bitwise: bool },
     ByteOrder,

@@ -59,6 +59,7 @@ pub struct Properties {
     pub loc: Location,
     pub alignment: Alignment,
     pub constraints: Vec<Constraint>,
+    pub fin: Option<Box<Expr>>,
 }
 
 #[derive(Clone, Debug)]
@@ -137,6 +138,7 @@ impl Default for Properties {
                 bitwise: false,
             },
             constraints: Vec::new(),
+            fin: None,
         }
     }
 }
