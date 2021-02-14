@@ -108,13 +108,16 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 })?)
             }
             ExprKind::Member(st, mem) => {
-                let struct_nf = self.expect_nf(&st)?;
-                Partial::Name(Name::Field(
-                    struct_nf.get_field(mem.sym).ok_or(EError(
+                if let NameField::Struct(ns) = self.expect_nf(&st)? {
+                    Partial::Name(Name::Field(ns.fields.get(&mem.sym).ok_or(
+                        EError(mem.span, EErrorKind::MemberNotFound(mem.sym)),
+                    )?))
+                } else {
+                    return Err(EError(
                         mem.span,
-                        EErrorKind::MemberNotFound(mem.sym),
-                    ))?,
-                ))
+                        EErrorKind::NonStructMemberAccess,
+                    ));
+                }
             }
             ExprKind::Index(arr, idx_expr) => {
                 let arr_nf = self.expect_nf(arr)?;
@@ -127,9 +130,15 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 } else {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
-                Partial::Name(Name::Field(arr_nf.get_element(u).ok_or_else(
-                    || expr.err(EErrorKind::ElementNotFound(u)),
-                )?))
+                if let NameField::Array(narr) = arr_nf {
+                    Partial::Name(Name::Field(
+                        narr.elements.get(u).ok_or_else(|| {
+                            expr.err(EErrorKind::ElementNotFound(u))
+                        })?,
+                    ))
+                } else {
+                    return Err(idx_expr.err(EErrorKind::NonArrayIndexAccess));
+                }
             }
             _ => Partial::Value(self.eval(expr)?),
         })

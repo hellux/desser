@@ -193,23 +193,19 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn parse_for_array(&mut self, fl: &ast::ForArray) -> SResult<NameArray> {
         let mut is = IndexSpace::new();
 
-        let len = self
-            .eval_partial(&fl.arr)?
-            .name()
-            .and_then(|n| n.field())
-            .and_then(NameField::elements)
-            .ok_or_else(|| fl.arr.err(EErrorKind::NonArray))?
-            .len();
+        let narr = if let Partial::Name(Name::Field(NameField::Array(narr))) =
+            self.eval_partial(&fl.arr)?
+        {
+            narr
+        } else {
+            return Err(fl.arr.err(EErrorKind::NonArrayIterator).into());
+        };
+
+        let len = narr.elements.len();
 
         let mut start = None;
         for idx in 0..len {
-            let elem = self
-                .eval_partial(&fl.arr)?
-                .name()
-                .and_then(|n| n.field())
-                .ok_or_else(|| fl.arr.err(EErrorKind::NonArray))?
-                .get_element(idx)
-                .unwrap();
+            let elem = narr.elements.get(idx).unwrap();
 
             let mut ss = Namespace::new();
             ss.insert(fl.elem, Name::Field(elem));

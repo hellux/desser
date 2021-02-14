@@ -77,30 +77,6 @@ impl<'n> Name<'n> {
 }
 
 impl NameField {
-    pub fn get_field(&self, sym: Sym) -> Option<&NameField> {
-        if let Self::Struct(st) = self {
-            st.fields.get(&sym)
-        } else {
-            panic!("not a field")
-        }
-    }
-
-    pub fn get_element(&self, idx: usize) -> Option<&NameField> {
-        if let Self::Array(arr) = self {
-            arr.elements.get(idx)
-        } else {
-            panic!("not a struct")
-        }
-    }
-
-    pub fn elements(&self) -> Option<&IndexSpace> {
-        if let Self::Array(arr) = self {
-            Some(&arr.elements)
-        } else {
-            panic!("not an array")
-        }
-    }
-
     pub fn start(&self) -> BitPos {
         match self {
             Self::Prim(ptr) => ptr.start,

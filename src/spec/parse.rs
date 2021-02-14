@@ -38,9 +38,7 @@ impl From<PError> for Error {
             UnexpectedToken(token) => {
                 format!("unexpected token -- {:?}", token)
             }
-            UnexpectedSymbol(s) => {
-                format!("unexpected symbol -- {:?}", s)
-            }
+            UnexpectedSymbol(s) => format!("unexpected symbol -- {:?}", s),
             UnexpectedKeyword(keyword) => {
                 format!("unexpected keyword -- {:?}", keyword)
             }
