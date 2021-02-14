@@ -308,7 +308,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                             Name::Spec(_) => {
                                 eprintln!("<struct specification>")
                             }
-                            Name::Value(_) => unreachable!(),
+                            Name::Value(val) => eprintln!("{:?} ", val),
                         },
                         Partial::Value(val) => eprintln!("{:?} ", val),
                     }
