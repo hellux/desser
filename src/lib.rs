@@ -132,6 +132,7 @@ enum BuiltInProp {
     Order,
     OrderBit,
 
+    Final,
     Constraint,
     Zero,
     NonZero,
@@ -166,9 +167,10 @@ const IDENTIFIERS: [(BuiltInIdent, &str); 2] = [
     (BuiltInIdent::IdSelf, "#self"),
     (BuiltInIdent::Super, "super"),
 ];
-const PROPERTIES: [(BuiltInProp, &str); 19] = [
+const PROPERTIES: [(BuiltInProp, &str); 20] = [
     (BuiltInProp::Order, "order"),
     (BuiltInProp::OrderBit, "border"),
+    (BuiltInProp::Final, "final"),
     (BuiltInProp::Constraint, "constraint"),
     (BuiltInProp::Zero, "zero"),
     (BuiltInProp::NonZero, "nonzero"),

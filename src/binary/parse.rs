@@ -150,7 +150,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         let mut start = None;
         let mut is = IndexSpace::new();
-        loop {
+        let mut final_signal = false;
+        while !final_signal {
             if let Some(m) = max_size {
                 if is.len() >= m as usize {
                     break;
@@ -173,6 +174,16 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     _ => return Err(k),
                 },
             };
+
+            if let Some(fin) = &arr.ty.properties.fin {
+                self.scope.enter_selfscope(unsafe {
+                    std::mem::transmute::<&NameField, &'s NameField>(&name)
+                });
+                let res = self.eval_nonzero(&fin);
+                self.scope.exit_selfscope();
+
+                final_signal = res?
+            }
 
             if start.is_none() {
                 start = Some(name.start());
