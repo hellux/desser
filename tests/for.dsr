@@ -1,0 +1,14 @@
+const N = 5,
+
+[u8; N] arr0,
+[ for n in arr0 repeat
+    [constraint(.-.%N == (1+n)*N) u8; N]
+] arr1,
+
+[ for ns in arr1 repeat
+    [ for n in ns repeat
+        [constraint(.-.%N == (1+n)*N) u8; N]
+    ]
+],
+
+eq(N + N*N + N*N*N) u8

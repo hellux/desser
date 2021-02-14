@@ -1,0 +1,16 @@
+eq(0) u8 b0,
+
+if b0 == 0 then u8 else u16 b1,
+
+eq(2) if b1 == 1 then u8 else u32 if0,
+eq(3) if b0 == 1 then u32 else if b0 == 0 then u8 else u32 if1,
+eq(4) if b0 == 2 then u32 else if b0 == 1 then u32 else u8 if2,
+
+constraint(.a == 5 && .b == 6)
+if b0 == 0 then {
+    eq(5) u8 a,
+    eq(6) u8 b,
+} else {
+    neq(5) u32 a,
+    neq(6) u32 b,
+} block,

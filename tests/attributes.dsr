@@ -1,0 +1,17 @@
+let s = 7,
+let n = 15,
+
+skip(s) [u16; n] array,
+bskip(4) [u16; n] unaligned_array,
+
+constrain {
+    array'start == s,
+    array'size == 2*n,
+    array'length == n,
+    array'end == array'start + array'size,
+
+    unaligned_array'start == array'end,
+    unaligned_array'size == array'size + 1,
+    unaligned_array'length == n,
+    unaligned_array'end == unaligned_array'start + unaligned_array'size,
+}
