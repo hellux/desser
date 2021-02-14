@@ -284,12 +284,22 @@ impl Parser {
                             self.eat(&mut stmt_stream)?; // keyword
                             let (id, expr) =
                                 self.parse_assign(&mut stmt_stream)?;
+                            self.assert_eof(
+                                &stmt_stream,
+                                "comma expected after let statement"
+                                    .to_string(),
+                            );
                             return Ok(ast::Stmt::Let(id, expr));
                         }
                         Keyword::Constrain => {
                             self.eat(&mut stmt_stream)?; // keyword
                             self.eat(&mut stmt_stream)?; // block
                             let dn = self.expect_delim()?;
+                            self.assert_eof(
+                                &stmt_stream,
+                                "comma expected after constrain statement"
+                                    .to_string(),
+                            );
                             return Ok(ast::Stmt::Constrain(
                                 self.parse_expr_list(dn.stream)?,
                             ));
@@ -298,6 +308,11 @@ impl Parser {
                             self.eat(&mut stmt_stream)?; // keyword
                             self.eat(&mut stmt_stream)?; // block
                             let dn = self.expect_delim()?;
+                            self.assert_eof(
+                                &stmt_stream,
+                                "comma expected after debug statement"
+                                    .to_string(),
+                            );
                             return Ok(ast::Stmt::Debug(
                                 self.parse_expr_list(dn.stream)?,
                             ));
