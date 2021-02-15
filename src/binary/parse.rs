@@ -372,7 +372,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     self.parse_field_type(&if_type.else_res)?
                 }
             }
-            ast::FieldKind::Null => NameField::Null,
+            ast::FieldKind::Null => NameField::Null(self.pos),
         };
 
         for constraint in &ty.properties.constraints {

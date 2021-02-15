@@ -61,7 +61,7 @@ pub(super) enum NameField {
     Prim(Ptr),
     Struct(NameStruct),
     Array(NameArray),
-    Null,
+    Null(BitPos),
 }
 pub(super) type NameStruct = StructT<FieldSpace>;
 pub(super) type NameArray = ArrayT<IndexSpace>;
@@ -82,7 +82,7 @@ impl NameField {
             Self::Prim(ptr) => ptr.start,
             Self::Struct(nst) => nst.start,
             Self::Array(narr) => narr.start,
-            Self::Null => BitCount::new(0),
+            Self::Null(start) => *start,
         }
     }
 
@@ -91,7 +91,7 @@ impl NameField {
             Self::Prim(ptr) => ptr.pty.size(),
             Self::Struct(nst) => nst.size,
             Self::Array(narr) => narr.size,
-            Self::Null => BitCount::new(0),
+            Self::Null(_) => BitCount::new(0),
         }
     }
 
