@@ -13,7 +13,7 @@ pub enum StructField {
 pub struct Array {
     pub start: BitPos,
     pub size: BitSize,
-    pub elements: Vec<StructField>,
+    pub elements: Vec<(usize, StructField)>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,7 +28,9 @@ impl StructField {
         match self {
             StructField::Prim(_) => true,
             StructField::Array(Array { elements, .. }) => {
-                if let Some(StructField::Prim(ptr)) = elements.get(0) {
+                if let Some(StructField::Prim(ptr)) =
+                    elements.get(0).map(|e| &e.1)
+                {
                     matches!(ptr.pty, PrimType::Char)
                 } else {
                     false
@@ -74,8 +76,8 @@ impl TryFrom<NameStruct> for StructField {
             .fields
             .0
             .into_iter()
-            .filter_map(|(sym, f)| match (sym, f.try_into()) {
-                (s, Ok(t)) => Some((s, t)),
+            .filter_map(|(sym, f)| match f.try_into() {
+                Ok(t) => Some((sym, t)),
                 _ => None,
             })
             .collect();
@@ -102,7 +104,11 @@ impl TryFrom<NameArray> for StructField {
         let elements = narr
             .elements
             .into_iter()
-            .filter_map(|e| e.try_into().ok())
+            .enumerate()
+            .filter_map(|(i, e)| match e.try_into() {
+                Ok(oe) => Some((i, oe)),
+                _ => None,
+            })
             .collect();
 
         Ok(StructField::Array(Array {
