@@ -72,6 +72,7 @@ impl TryFrom<NameStruct> for StructField {
     fn try_from(nst: NameStruct) -> Result<Self, Self::Error> {
         let mut fields: Vec<(Sym, StructField)> = nst
             .fields
+            .0
             .into_iter()
             .filter_map(|(sym, f)| match (sym, f.try_into()) {
                 (s, Ok(t)) => Some((s, t)),

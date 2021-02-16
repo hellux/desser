@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::spec::ast;
 use crate::BuiltInIdent;
 use crate::SymbolTable;
@@ -7,19 +5,45 @@ use crate::SymbolTable;
 use super::eval::{Partial, Val};
 use super::*;
 
-pub(super) type FieldSpace = HashMap<Sym, NameField>;
+#[derive(Clone, Debug)]
+pub(super) struct SymSpace<T>(pub Vec<(Sym, T)>);
+
+type FieldSpace = SymSpace<NameField>;
 pub(super) type IndexSpace = Vec<NameField>;
+
+impl<T> SymSpace<T> {
+    pub fn new() -> Self {
+        SymSpace(Vec::new())
+    }
+
+    pub fn get(&self, sym: &Sym) -> Option<&T> {
+        self.0
+            .iter()
+            .rev()
+            .find_map(|(s, e)| if s == sym { Some(e) } else { None })
+    }
+
+    pub fn insert(&mut self, sym: Sym, e: T) -> bool {
+        let existed = self.get(&sym).is_some();
+        self.0.push((sym, e));
+        existed
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 #[derive(Clone, Debug)]
 pub(super) struct Namespace<'n> {
-    space: HashMap<Sym, Name<'n>>,
+    space: SymSpace<Name<'n>>,
     values: Vec<Val>,
 }
 
 impl<'n> Namespace<'n> {
     pub fn new() -> Self {
         Namespace {
-            space: HashMap::new(),
+            space: SymSpace::new(),
             values: Vec::new(),
         }
     }
@@ -28,11 +52,11 @@ impl<'n> Namespace<'n> {
         self.space.get(&sym)
     }
 
-    pub fn insert(&mut self, sym: Sym, name: Name<'n>) {
-        self.space.insert(sym, name);
+    pub fn insert(&mut self, sym: Sym, name: Name<'n>) -> bool {
+        self.space.insert(sym, name)
     }
 
-    pub fn insert_partial(&mut self, sym: Sym, part: Partial<'n>) {
+    pub fn insert_partial(&mut self, sym: Sym, part: Partial<'n>) -> bool {
         let name = match part {
             Partial::Value(val) => {
                 self.values.push(val);
@@ -45,7 +69,7 @@ impl<'n> Namespace<'n> {
             Partial::Name(name) => name,
         };
 
-        self.insert(sym, name);
+        self.insert(sym, name)
     }
 }
 
@@ -199,17 +223,21 @@ impl<'n> Scope<'n> {
         None
     }
 
-    pub fn insert_local(&mut self, sym: Sym, part: Partial<'n>) {
+    pub fn insert_local(&mut self, sym: Sym, part: Partial<'n>) -> bool {
         self.structs
             .last_mut()
             .unwrap()
             .local_scopes
             .last_mut()
             .unwrap()
-            .insert_partial(sym, part);
+            .insert_partial(sym, part)
     }
 
-    pub fn insert_field(&mut self, sym_opt: Option<Sym>, nf: NameField) {
+    pub fn insert_field(
+        &mut self,
+        sym_opt: Option<Sym>,
+        nf: NameField,
+    ) -> bool {
         let sym = sym_opt.map_or_else(
             || {
                 self.unnamed -= 1;
@@ -237,7 +265,7 @@ impl<'n> Scope<'n> {
             curr.size = curr.size + size;
         }
 
-        curr.fields.insert(sym, nf);
+        curr.fields.insert(sym, nf)
     }
 
     pub fn enter_struct(&mut self, base: BitPos, static_scope: Namespace<'n>) {
