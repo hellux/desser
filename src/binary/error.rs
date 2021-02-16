@@ -13,6 +13,7 @@ pub enum SErrorKind {
     EndOfFile(BitSize),
     FailedConstraint(Span),
     Expr(EError),
+    FieldExists(Sym),
     AddrBeforePos(BitPos),
 }
 

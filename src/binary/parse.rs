@@ -261,13 +261,24 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         let mut static_space = Namespace::new();
         for (sym, expr) in spec.formal_params.iter().zip(params.iter()) {
-            static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            let exists =
+                static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
         }
         for (sym, expr) in &spec.constants {
-            static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            let exists =
+                static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
         }
         for (sym, spec) in &spec.structs {
-            static_space.insert(*sym, Name::Spec(spec));
+            let exists = static_space.insert(*sym, Name::Spec(spec));
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
         }
 
         self.scope.enter_struct(self.pos, static_space);
@@ -425,7 +436,10 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         self.traversed_fields.pop();
 
         if !field.hidden {
-            self.scope.insert_field(field.id, name);
+            let exists = self.scope.insert_field(field.id, name);
+            if exists {
+                return Err(SErrorKind::FieldExists(field.id.unwrap()));
+            }
         }
 
         Ok(())
