@@ -234,11 +234,7 @@ impl<'n> Scope<'n> {
             curr.start = start;
             curr.size = size;
         } else {
-            let end = start + size;
-            let curr_end = curr.start + curr.size;
-            curr.start = BitPos::min(start, curr.start);
-            let next_end = BitPos::max(end, curr_end);
-            curr.size = next_end - curr.start;
+            curr.size = curr.size + size;
         }
 
         curr.fields.insert(sym, nf);
