@@ -431,7 +431,8 @@ impl Parser {
                     })) = stream.peek()
                     {
                         self.eat(stream)?; // arguments
-                        self.expect_delim()?.stream.split_on(Symbol::Comma)
+                        let dn = self.expect_delim()?;
+                        self.parse_expr_list(dn.stream)?
                     } else {
                         vec![]
                     };
@@ -443,58 +444,37 @@ impl Parser {
             match prop {
                 Property::Align(bitwise) => {
                     props.alignment = ast::Alignment {
-                        expr: Some(self.parse_expr(args.remove(0))?),
+                        expr: Some(args.remove(0)),
                         bitwise,
                     }
                 }
                 Property::Location { base, bitwise } => {
-                    let expr = Some(self.parse_expr(args.remove(0))?);
+                    let expr = Some(args.remove(0));
                     props.loc = ast::Location {
                         expr,
                         base,
                         bitwise,
                     };
                 }
-                ord @ Property::ByteOrder | ord @ Property::BitOrder => {
-                    let mut arg0 = args.remove(0);
-                    self.eat(&mut arg0)?;
-                    let ident = self.expect_ident()?;
-                    self.assert_eof(
-                        &arg0,
-                        "order takes only le or be".to_string(),
-                    );
-                    let order = match self.symtab.name(ident).unwrap() {
-                        "le" => Order::LittleEndian,
-                        "be" => Order::BigEndian,
-                        _ => {
-                            return Err(self.err_hint(
-                                Unexpected,
-                                "expected le or be".to_string(),
-                            ))
-                        }
-                    };
-                    match ord {
-                        Property::ByteOrder => props.byte_order = order,
-                        Property::BitOrder => props.bit_order = order,
-                        _ => unreachable!(),
-                    }
+                Property::Order(ord) => {
+                    props.order = ord;
                 }
                 Property::Constr(constr) => {
                     let c = match constr {
                         Constr::Generic => ast::Constraint::Generic(
-                            self.parse_expr(args.remove(0))?,
+                            args.remove(0),
                         ),
                         Constr::Zero(z) => ast::Constraint::Zero(z),
                         Constr::Binary(binop) => ast::Constraint::Binary(
                             binop,
-                            self.parse_expr(args.remove(0))?,
+                            args.remove(0),
                         ),
                     };
                     props.constraints.push(c);
                 }
                 Property::Final => {
                     props.fin =
-                        Some(Box::new(self.parse_expr(args.remove(0))?));
+                        Some(Box::new(args.remove(0)));
                 }
             }
 
@@ -917,9 +897,8 @@ impl Parser {
 impl From<BuiltInProp> for Property {
     fn from(b: BuiltInProp) -> Self {
         match b {
-            BuiltInProp::Order => Self::ByteOrder,
-            BuiltInProp::OrderBit => Self::BitOrder,
-
+            BuiltInProp::Le => Self::Order(Order::LittleEndian),
+            BuiltInProp::Be => Self::Order(Order::BigEndian),
             BuiltInProp::Final => Self::Final,
 
             BuiltInProp::Constraint => Self::Constr(Constr::Generic),
@@ -969,8 +948,7 @@ enum Property {
     Final,
     Constr(Constr),
     Location { base: AddrBase, bitwise: bool },
-    ByteOrder,
-    BitOrder,
+    Order(Order),
 }
 
 #[derive(Copy, Clone, Debug)]

@@ -54,8 +54,7 @@ pub struct FieldType {
 
 #[derive(Clone, Debug)]
 pub struct Properties {
-    pub byte_order: Order,
-    pub bit_order: Order,
+    pub order: Order,
     pub loc: Location,
     pub alignment: Alignment,
     pub constraints: Vec<Constraint>,
@@ -126,8 +125,7 @@ impl FieldType {
 impl Default for Properties {
     fn default() -> Self {
         Properties {
-            byte_order: Order::LittleEndian,
-            bit_order: Order::LittleEndian,
+            order: Order::LittleEndian,
             loc: Location {
                 expr: None,
                 base: AddrBase::Absolute,

@@ -363,8 +363,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 let ptr = Ptr {
                     start: self.pos,
                     pty: spty,
-                    byte_order: ty.properties.byte_order,
-                    bit_order: ty.properties.bit_order,
+                    order: ty.properties.order,
                 };
                 self.seek(ptr.start + ptr.pty.size())?;
                 NameField::Prim(ptr)

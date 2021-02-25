@@ -11,8 +11,8 @@ impl Ptr {
         read_bytes(
             self.start,
             self.pty.size(),
-            self.byte_order,
-            self.bit_order,
+            self.order,
+            self.order,
             f,
         )
     }

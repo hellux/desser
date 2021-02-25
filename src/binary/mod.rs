@@ -28,8 +28,7 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
 pub struct Ptr {
     pub start: BitPos,
     pub pty: PrimType,
-    pub byte_order: Order,
-    pub bit_order: Order,
+    pub order: Order,
 }
 
 #[derive(Clone, Debug)]
