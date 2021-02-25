@@ -6,7 +6,7 @@ use super::*;
 pub fn view_structure<R: Read + Seek, W: Write>(
     f: &mut R,
     output: &mut W,
-    field: &StructField,
+    field: &FieldKind,
     symtab: &SymbolTable,
 ) -> io::Result<()> {
     let mut bufwr = std::io::BufWriter::new(output);
@@ -31,13 +31,13 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
         }
     }
 
-    fn format(&mut self, field: &StructField) -> io::Result<()> {
+    fn format(&mut self, kind: &FieldKind) -> io::Result<()> {
         self.addr_len =
-            format!("{:x}", BytePos::from(field.size()).size()).len();
-        self.fmt_field(field, 0)
+            format!("{:x}", BytePos::from(kind.size()).size()).len();
+        self.fmt_field(kind, 0)
     }
 
-    fn prepend_addr(&mut self, kind: &StructField) -> io::Result<()> {
+    fn prepend_addr(&mut self, kind: &FieldKind) -> io::Result<()> {
         let bit = kind.start().bit_index();
         let bit_str = if bit > 0 {
             format!(":{}", bit)
@@ -71,15 +71,17 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             write!(self.out, "0x{:} ", st.size)?;
             self.out.write_all(b"{\n")?;
         }
-        for (id, f) in &st.fields {
-            self.prepend_addr(&f)?;
-            self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
-            if let Some(sym) = id {
-                let name = self.symtab.name(*sym).unwrap();
-                write!(self.out, "{}: ", name)?;
+        for (id, f) in &st.fields.0 {
+            if !f.hidden && !matches!(f.kind, FieldKind::Null(_)) {
+                self.prepend_addr(&f.kind)?;
+                self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
+                if let Some(sym) = id {
+                    let name = self.symtab.name(*sym).unwrap();
+                    write!(self.out, "{}: ", name)?;
+                }
+                self.fmt_field(&f.kind, level)?;
+                self.out.write_all(b"\n")?;
             }
-            self.fmt_field(&f, level)?;
-            self.out.write_all(b"\n")?;
         }
 
         if level > 1 {
@@ -95,12 +97,12 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
         let w = format!("{}", arr.elements.len()).len();
 
         if !arr.elements.is_empty() {
-            if let StructField::Prim(Ptr {
+            if let FieldKind::Prim(Ptr {
                 pty: PrimType::Char,
                 ..
-            }) = arr.elements[0].1
+            }) = arr.elements[0]
             {
-                for (_, f) in &arr.elements {
+                for f in &arr.elements {
                     self.fmt_field(f, level)?;
                 }
             } else {
@@ -109,7 +111,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                     self.out.write_all(b"[\n")?;
                 }
 
-                for (i, f) in &arr.elements {
+                for (i, f) in arr.elements.iter().enumerate() {
                     self.prepend_addr(f)?;
                     self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
                     write!(self.out, "{:0>w$}: ", i, w = w,)?;
@@ -130,18 +132,15 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
         Ok(())
     }
 
-    fn fmt_field(
-        &mut self,
-        kind: &StructField,
-        level: usize,
-    ) -> io::Result<()> {
+    fn fmt_field(&mut self, kind: &FieldKind, level: usize) -> io::Result<()> {
         match kind {
-            StructField::Prim(ptr) => {
+            FieldKind::Prim(ptr) => {
                 let data = ptr.read(&mut self.f);
                 ptr.pty.fmt(&mut self.out, data.as_slice())
             }
-            StructField::Array(arr) => self.fmt_array(arr, level + 1),
-            StructField::Struct(st) => self.fmt_struct(&st, level + 1),
+            FieldKind::Array(arr) => self.fmt_array(&arr, level + 1),
+            FieldKind::Struct(st) => self.fmt_struct(&st, level + 1),
+            FieldKind::Null(_) => Ok(()),
         }
     }
 }

@@ -474,20 +474,18 @@ impl Parser {
                 }
                 Property::Constr(constr) => {
                     let c = match constr {
-                        Constr::Generic => ast::Constraint::Generic(
-                            args.remove(0),
-                        ),
+                        Constr::Generic => {
+                            ast::Constraint::Generic(args.remove(0))
+                        }
                         Constr::Zero(z) => ast::Constraint::Zero(z),
-                        Constr::Binary(binop) => ast::Constraint::Binary(
-                            binop,
-                            args.remove(0),
-                        ),
+                        Constr::Binary(binop) => {
+                            ast::Constraint::Binary(binop, args.remove(0))
+                        }
                     };
                     props.constraints.push(c);
                 }
                 Property::Final => {
-                    props.fin =
-                        Some(Box::new(args.remove(0)));
+                    props.fin = Some(Box::new(args.remove(0)));
                 }
             }
 

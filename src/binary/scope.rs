@@ -5,41 +5,7 @@ use crate::SymbolTable;
 use super::eval::{Partial, Val};
 use super::*;
 
-#[derive(Clone, Debug)]
-pub(super) struct SymSpace<T>(pub Vec<(Option<Sym>, T)>);
-
-#[derive(Clone, Debug)]
-pub(super) struct NameFieldElem {
-    pub nf: NameField,
-    pub hidden: bool,
-    // TODO format
-}
-
-type FieldSpace = SymSpace<NameFieldElem>;
-pub(super) type IndexSpace = Vec<NameField>;
-
-impl<T> SymSpace<T> {
-    pub fn new() -> Self {
-        SymSpace(Vec::new())
-    }
-
-    pub fn get(&self, sym: &Sym) -> Option<&T> {
-        self.0
-            .iter()
-            .rev()
-            .find_map(|(s, e)| if *s == Some(*sym) { Some(e) } else { None })
-    }
-
-    pub fn insert(&mut self, sym: Option<Sym>, e: T) -> bool {
-        let existed = sym.map(|s| self.get(&s).is_some()).unwrap_or(false);
-        self.0.push((sym, e));
-        existed
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
+type FieldSpace = SymSpace<Field>;
 
 #[derive(Clone, Debug)]
 pub(super) struct Namespace<'n> {
@@ -83,68 +49,40 @@ impl<'n> Namespace<'n> {
 #[derive(Copy, Clone, Debug)]
 pub(super) enum Name<'n> {
     Value(&'n Val),
-    Field(&'n NameField),
+    Field(&'n FieldKind),
     Spec(&'n ast::Struct),
 }
 
-#[derive(Clone, Debug)]
-pub(super) enum NameField {
-    Prim(Ptr),
-    Struct(NameStruct),
-    Array(NameArray),
-    Null(BitPos),
-}
-pub(super) type NameStruct = StructT<FieldSpace>;
-pub(super) type NameArray = ArrayT<IndexSpace>;
-
 impl<'n> Name<'n> {
-    pub fn field(&self) -> Option<&'n NameField> {
-        if let Self::Field(nf) = self {
-            Some(nf)
+    pub fn field(&self) -> Option<&'n FieldKind> {
+        if let Self::Field(field) = self {
+            Some(field)
         } else {
             None
         }
     }
 }
 
-impl NameField {
-    pub fn start(&self) -> BitPos {
-        match self {
-            Self::Prim(ptr) => ptr.start,
-            Self::Struct(nst) => nst.start,
-            Self::Array(narr) => narr.start,
-            Self::Null(start) => *start,
-        }
-    }
-
-    pub fn size(&self) -> BitSize {
-        match self {
-            Self::Prim(ptr) => ptr.pty.size(),
-            Self::Struct(nst) => nst.size,
-            Self::Array(narr) => narr.size,
-            Self::Null(_) => BitCount::new(0),
-        }
-    }
-
-    fn st(&self) -> &NameStruct {
-        if let Self::Struct(nst) = self {
-            nst
+impl FieldKind {
+    fn st(&self) -> &Struct {
+        if let Self::Struct(st) = self {
+            st
         } else {
             panic!("not a struct")
         }
     }
 
-    fn st_mut(&mut self) -> &mut NameStruct {
-        if let Self::Struct(nst) = self {
-            nst
+    fn st_mut(&mut self) -> &mut Struct {
+        if let Self::Struct(st) = self {
+            st
         } else {
             panic!("not a struct")
         }
     }
 
-    fn into_st(self) -> NameStruct {
-        if let Self::Struct(nst) = self {
-            nst
+    fn into_st(self) -> Struct {
+        if let Self::Struct(st) = self {
+            st
         } else {
             panic!("not a struct")
         }
@@ -155,7 +93,7 @@ impl NameField {
 struct StructScope<'n> {
     static_scope: Namespace<'n>, // accessible to all inner structs
     local_scopes: Vec<Namespace<'n>>, // last is most inner
-    blocks: Vec<NameField>,
+    blocks: Vec<FieldKind>,
 }
 
 #[derive(Clone, Debug)]
@@ -170,7 +108,7 @@ impl<'n> Scope<'n> {
         let builtins = StructScope {
             static_scope: Namespace::new(),
             local_scopes: vec![Namespace::new()],
-            blocks: vec![NameField::Struct(NameStruct {
+            blocks: vec![FieldKind::Struct(Struct {
                 start: BitPos::new(0),
                 size: file_length,
                 fields: FieldSpace::new(),
@@ -209,13 +147,13 @@ impl<'n> Scope<'n> {
         }
 
         /* check all local blocks for previous fields */
-        if let Some(elem) = current_struct
+        if let Some(field) = current_struct
             .blocks
             .iter()
             .rev()
             .find_map(|b| b.st().fields.get(&sym))
         {
-            return Some(Name::Field(&elem.nf));
+            return Some(Name::Field(&field.kind));
         }
 
         /* check all above structs for struct specs and parameters */
@@ -241,7 +179,7 @@ impl<'n> Scope<'n> {
     pub fn insert_field(
         &mut self,
         sym: Option<Sym>,
-        nf: NameField,
+        kind: FieldKind,
         hidden: bool,
     ) -> bool {
         let curr = self
@@ -253,8 +191,8 @@ impl<'n> Scope<'n> {
             .unwrap()
             .st_mut();
 
-        let start = nf.start();
-        let size = nf.size();
+        let start = kind.start();
+        let size = kind.size();
 
         if curr.fields.is_empty() {
             curr.start = start;
@@ -264,11 +202,11 @@ impl<'n> Scope<'n> {
         }
 
         let s = if hidden { None } else { sym };
-        curr.fields.insert(s, NameFieldElem { nf, hidden })
+        curr.fields.insert(s, Field { kind, hidden })
     }
 
     pub fn enter_struct(&mut self, base: BitPos, static_scope: Namespace<'n>) {
-        let blocks = vec![NameField::Struct(NameStruct {
+        let blocks = vec![FieldKind::Struct(Struct {
             start: base,
             size: BitSize::new(0),
             fields: FieldSpace::new(),
@@ -280,7 +218,7 @@ impl<'n> Scope<'n> {
         });
     }
 
-    pub fn exit_struct(&mut self) -> NameStruct {
+    pub fn exit_struct(&mut self) -> Struct {
         self.structs.pop().unwrap().blocks.pop().unwrap().into_st()
     }
 
@@ -289,14 +227,14 @@ impl<'n> Scope<'n> {
             .last_mut()
             .unwrap()
             .blocks
-            .push(NameField::Struct(NameStruct {
+            .push(FieldKind::Struct(Struct {
                 start: base,
                 size: BitSize::new(0),
                 fields: FieldSpace::new(),
             }));
     }
 
-    pub fn exit_subblock(&mut self) -> NameStruct {
+    pub fn exit_subblock(&mut self) -> Struct {
         self.structs
             .last_mut()
             .unwrap()
@@ -314,9 +252,9 @@ impl<'n> Scope<'n> {
         self.structs.last_mut().unwrap().local_scopes.pop().unwrap()
     }
 
-    pub fn enter_selfscope(&mut self, self_nf: &'n NameField) {
+    pub fn enter_selfscope(&mut self, self_fk: &'n FieldKind) {
         let mut ns = Namespace::new();
-        ns.insert(Some(self.self_sym), Name::Field(self_nf));
+        ns.insert(Some(self.self_sym), Name::Field(self_fk));
         self.enter_subscope(ns);
     }
 

@@ -5,7 +5,7 @@ use crate::spec::LitKind;
 use crate::{BuiltInAttr, SpannedSym};
 
 use super::error::{EError, EErrorKind, EResult};
-use super::scope::{Name, NameArray, NameField, NameStruct, Scope};
+use super::scope::{Name, Scope};
 use super::*;
 
 pub type IntVal = i64;
@@ -108,10 +108,16 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 })?)
             }
             ExprKind::Member(st, mem) => {
-                if let NameField::Struct(ns) = self.expect_nf(&st)? {
-                    Partial::Name(Name::Field(&ns.fields.get(&mem.sym).ok_or(
-                        EError(mem.span, EErrorKind::MemberNotFound(mem.sym)),
-                    )?.nf))
+                if let FieldKind::Struct(ns) = self.expect_fk(&st)? {
+                    Partial::Name(Name::Field(
+                        &ns.fields
+                            .get(&mem.sym)
+                            .ok_or(EError(
+                                mem.span,
+                                EErrorKind::MemberNotFound(mem.sym),
+                            ))?
+                            .kind,
+                    ))
                 } else {
                     return Err(EError(
                         mem.span,
@@ -120,7 +126,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 }
             }
             ExprKind::Index(arr, idx_expr) => {
-                let arr_nf = self.expect_nf(arr)?;
+                let fk = self.expect_fk(arr)?;
                 let idx = self.eval(&idx_expr)?;
                 let i = idx.int().ok_or_else(|| {
                     idx_expr.err(EErrorKind::NonIntegerIndex)
@@ -130,9 +136,9 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 } else {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
-                if let NameField::Array(narr) = arr_nf {
+                if let FieldKind::Array(arr) = fk {
                     Partial::Name(Name::Field(
-                        narr.elements.get(u).ok_or_else(|| {
+                        arr.elements.get(u).ok_or_else(|| {
                             expr.err(EErrorKind::ElementNotFound(u))
                         })?,
                     ))
@@ -162,10 +168,10 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     fn eval_name(&mut self, name: Name<'a>) -> Option<Val> {
         Some(match name {
             Name::Value(val) => val.clone(),
-            Name::Field(nf) => match nf {
-                NameField::Prim(ptr) => ptr.eval(self.f),
-                NameField::Array(NameArray { start, size, .. })
-                | NameField::Struct(NameStruct { start, size, .. }) => {
+            Name::Field(fk) => match fk {
+                FieldKind::Prim(ptr) => ptr.eval(self.f),
+                FieldKind::Array(Array { start, size, .. })
+                | FieldKind::Struct(Struct { start, size, .. }) => {
                     Val::Compound(
                         format::read_bytes(
                             *start,
@@ -177,13 +183,13 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                         *size,
                     )
                 }
-                NameField::Null(_) => return None,
+                FieldKind::Null(_) => return None,
             },
             _ => return None,
         })
     }
 
-    fn expect_nf(&mut self, expr: &'a Expr) -> EResult<&'a NameField> {
+    fn expect_fk(&mut self, expr: &'a Expr) -> EResult<&'a FieldKind> {
         self.eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
@@ -209,32 +215,32 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn attr_start(&mut self, expr: &'a Expr) -> EResult<Val> {
-        let start = self.expect_nf(expr)?.start();
+        let start = self.expect_fk(expr)?.start();
         Ok(Val::Integer(BytePos::from(start).size() as IntVal))
     }
 
     fn attr_size(&mut self, expr: &'a Expr) -> EResult<Val> {
-        let start = self.expect_nf(expr)?.start();
-        let size = self.expect_nf(expr)?.size();
+        let start = self.expect_fk(expr)?.start();
+        let size = self.expect_fk(expr)?.size();
         Ok(Val::Integer(
             ByteSize::from_unaligned(start, size).size() as IntVal
         ))
     }
 
     fn attr_end(&mut self, expr: &'a Expr) -> EResult<Val> {
-        let start = self.expect_nf(expr)?.start();
-        let size = self.expect_nf(expr)?.size();
+        let start = self.expect_fk(expr)?.start();
+        let size = self.expect_fk(expr)?.size();
         Ok(Val::Integer(BytePos::from(start + size).size() as IntVal))
     }
 
     fn attr_offset(&mut self, expr: &'a Expr) -> EResult<Val> {
-        let offset = self.expect_nf(expr)?.start() - self.scope.base();
+        let offset = self.expect_fk(expr)?.start() - self.scope.base();
         Ok(Val::Integer(BytePos::from(offset).size() as IntVal))
     }
 
     fn attr_length(&mut self, expr: &'a Expr) -> EResult<Val> {
-        if let NameField::Array(narr) = self.expect_nf(expr)? {
-            Ok(Val::Integer(narr.elements.len() as IntVal))
+        if let FieldKind::Array(arr) = self.expect_fk(expr)? {
+            Ok(Val::Integer(arr.elements.len() as IntVal))
         } else {
             Err(expr.err(EErrorKind::NonArray))
         }

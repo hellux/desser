@@ -1,11 +1,8 @@
-use std::convert::TryFrom;
 use std::io::{BufRead, Seek, SeekFrom};
 
 use super::error::{EErrorKind, EResult, SError, SErrorKind, SResult};
 use super::eval::{Eval, IntVal, Partial, Val};
-use super::scope::{
-    IndexSpace, Name, NameArray, NameField, NameStruct, Namespace, Scope,
-};
+use super::scope::{Name, Namespace, Scope};
 use super::*;
 use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
 
@@ -13,11 +10,11 @@ pub(super) fn parse<'s, R: BufRead + Seek>(
     f: &'s mut R,
     root_spec: &'s ast::Struct,
     symtab: &mut SymbolTable,
-) -> Result<NameStruct, Error> {
+) -> Result<Struct, Error> {
     let length = ByteSize(f.seek(SeekFrom::End(0)).unwrap()).into();
     let scope = Scope::new(length, symtab);
     let mut fp = FileParser::new(f, scope, length, symtab);
-    let root_nst = match fp.parse_struct(root_spec, &[]) {
+    let root_st = match fp.parse_struct(root_spec, &[]) {
         Ok(r) => r,
         Err(kind) => {
             let e = SError {
@@ -29,7 +26,7 @@ pub(super) fn parse<'s, R: BufRead + Seek>(
         }
     };
 
-    Ok(root_nst)
+    Ok(root_st)
 }
 
 struct FileParser<'s, R> {
@@ -140,7 +137,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         Ok(unsafe { std::mem::transmute::<_, Partial<'s>>(part) })
     }
 
-    fn parse_std_array(&mut self, arr: &ast::StdArray) -> SResult<NameArray> {
+    fn parse_std_array(&mut self, arr: &ast::StdArray) -> SResult<Array> {
         let (min_size, max_size) = match &arr.size {
             ast::ArraySize::Exactly(n) => {
                 let n = self.eval_size(n)?;
@@ -153,7 +150,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         };
 
         let mut start = None;
-        let mut is = IndexSpace::new();
+        let mut is = Vec::new();
         let mut final_signal = false;
         while !final_signal {
             if let Some(m) = max_size {
@@ -181,7 +178,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
             if let Some(fin) = &arr.ty.properties.fin {
                 self.scope.enter_selfscope(unsafe {
-                    std::mem::transmute::<&NameField, &'s NameField>(&name)
+                    std::mem::transmute::<&FieldKind, &'s FieldKind>(&name)
                 });
                 let res = self.eval_nonzero(&fin);
                 self.scope.exit_selfscope();
@@ -198,29 +195,29 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         let start = start.unwrap_or(self.pos);
         let size = self.pos - start;
 
-        Ok(NameArray {
+        Ok(Array {
             start,
             size,
             elements: is,
         })
     }
 
-    fn parse_for_array(&mut self, fl: &ast::ForArray) -> SResult<NameArray> {
-        let mut is = IndexSpace::new();
+    fn parse_for_array(&mut self, fl: &ast::ForArray) -> SResult<Array> {
+        let mut is = Vec::new();
 
-        let narr = if let Partial::Name(Name::Field(NameField::Array(narr))) =
+        let arr = if let Partial::Name(Name::Field(FieldKind::Array(arr))) =
             self.eval_partial(&fl.arr)?
         {
-            narr
+            arr
         } else {
             return Err(fl.arr.err(EErrorKind::NonArrayIterator).into());
         };
 
-        let len = narr.elements.len();
+        let len = arr.elements.len();
 
         let mut start = None;
         for idx in 0..len {
-            let elem = narr.elements.get(idx).unwrap();
+            let elem = arr.elements.get(idx).unwrap();
 
             let mut ss = Namespace::new();
             ss.insert(Some(fl.elem), Name::Field(elem));
@@ -240,7 +237,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         let start = start.unwrap_or(self.pos);
         let size = self.pos - start;
 
-        Ok(NameArray {
+        Ok(Array {
             start,
             size,
             elements: is,
@@ -251,7 +248,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         &mut self,
         spec: &'s ast::Struct,
         params: &[ast::Expr],
-    ) -> SResult<NameStruct> {
+    ) -> SResult<Struct> {
         if spec.formal_params.len() != params.len() {
             return Err(SErrorKind::FormalActualMismatch(
                 spec.formal_params.len(),
@@ -283,11 +280,11 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         self.scope.enter_struct(self.pos, static_space);
         let success = self.parse_block(&spec.block);
-        let nst = self.scope.exit_struct();
+        let st = self.scope.exit_struct();
 
         success?;
 
-        Ok(nst)
+        Ok(st)
     }
 
     fn parse_block(&mut self, block: &[ast::Stmt]) -> SResult<()> {
@@ -312,20 +309,14 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                 for expr in exprs {
                     match self.eval_partial(expr)? {
                         Partial::Name(name) => match name {
-                            Name::Field(nf) => {
-                                if let Ok(sf) =
-                                    StructField::try_from(nf.clone())
-                                {
-                                    view::view_structure(
-                                        self.f,
-                                        &mut std::io::stderr(),
-                                        &sf,
-                                        self.symtab,
-                                    )
-                                    .ok();
-                                } else {
-                                    eprintln!("{{}}");
-                                }
+                            Name::Field(fk) => {
+                                view::view_structure(
+                                    self.f,
+                                    &mut std::io::stderr(),
+                                    &fk,
+                                    self.symtab,
+                                )
+                                .ok();
                             }
                             Name::Spec(_) => {
                                 eprintln!("<struct specification>")
@@ -342,21 +333,21 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         Ok(())
     }
 
-    fn parse_field_type(&mut self, ty: &ast::FieldType) -> SResult<NameField> {
+    fn parse_field_type(&mut self, ty: &ast::FieldType) -> SResult<FieldKind> {
         self.seek_loc(&ty.properties.loc)?;
         self.align(&ty.properties.alignment)?;
 
-        let nf = match &ty.kind {
-            ast::FieldKind::Array(arr) => NameField::Array(match arr {
+        let fk = match &ty.kind {
+            ast::FieldKind::Array(arr) => FieldKind::Array(match arr {
                 ast::Array::Std(arr) => self.parse_std_array(arr)?,
                 ast::Array::For(arr) => self.parse_for_array(arr)?,
             }),
             ast::FieldKind::Block(block) => {
                 self.scope.enter_subblock(self.pos);
                 let success = self.parse_block(block);
-                let nst = self.scope.exit_subblock();
+                let st = self.scope.exit_subblock();
                 success?;
-                NameField::Struct(nst)
+                FieldKind::Struct(st)
             }
             ast::FieldKind::Struct(spec_sym, args) => {
                 let name = self
@@ -364,7 +355,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     .get(spec_sym.sym)
                     .ok_or(SErrorKind::TypeNotFound(*spec_sym))?;
                 if let Name::Spec(spec) = name {
-                    NameField::Struct(self.parse_struct(spec, &args)?)
+                    FieldKind::Struct(self.parse_struct(spec, &args)?)
                 } else {
                     return Err(SErrorKind::NonSpec(*spec_sym));
                 }
@@ -377,7 +368,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     order: ty.properties.order,
                 };
                 self.seek(ptr.start + ptr.pty.size())?;
-                NameField::Prim(ptr)
+                FieldKind::Prim(ptr)
             }
             ast::FieldKind::If(if_type) => {
                 if self.eval_nonzero(&if_type.cond)? {
@@ -386,12 +377,12 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     self.parse_field_type(&if_type.else_res)?
                 }
             }
-            ast::FieldKind::Null => NameField::Null(self.pos),
+            ast::FieldKind::Null => FieldKind::Null(self.pos),
         };
 
         for constraint in &ty.properties.constraints {
             self.scope.enter_selfscope(unsafe {
-                std::mem::transmute::<&NameField, &'s NameField>(&nf)
+                std::mem::transmute::<&FieldKind, &'s FieldKind>(&fk)
             });
             let self_var = ast::Expr {
                 kind: ast::ExprKind::Variable(self.self_sym),
@@ -424,15 +415,15 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             }
         }
 
-        Ok(nf)
+        Ok(fk)
     }
 
     fn parse_field(&mut self, field: &ast::Field) -> SResult<()> {
         self.traversed_fields.push((field.span, field.id, self.pos));
 
-        let nf = self.parse_field_type(&field.ty)?;
+        let fk = self.parse_field_type(&field.ty)?;
 
-        let exists = self.scope.insert_field(field.id, nf, field.hidden);
+        let exists = self.scope.insert_field(field.id, fk, field.hidden);
         if exists {
             return Err(SErrorKind::FieldExists(field.id.unwrap()));
         }

@@ -118,18 +118,17 @@ fn main() {
             eprintln!("binary parsing..");
             match desser::parse_structure(&mut binary_file, &spec, &mut symtab)
             {
-                Ok(Some(root)) => {
+                Ok(root) => {
                     if opts.view {
                         eprintln!("viewing..");
                         view_structure(
                             &mut binary_file.into_inner(),
                             &mut std::io::stdout(),
-                            &root,
+                            &desser::FieldKind::Struct(root),
                             &symtab
                         ).ok();
                     }
                 }
-                Ok(None) => eprintln!("empty structure"),
                 Err(e) => {
                     errors.push(e);
                 }

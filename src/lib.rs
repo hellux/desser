@@ -3,7 +3,7 @@ use std::collections::HashMap;
 mod binary;
 mod spec;
 
-pub use binary::{parse_structure, view_structure};
+pub use binary::{parse_structure, view_structure, FieldKind};
 pub use spec::{parse_spec, Span, SpecFile};
 
 #[derive(Copy, Clone, Debug, PartialEq)]

@@ -8,13 +8,7 @@ use super::{Order, PrimType, Ptr};
 
 impl Ptr {
     pub fn read<R: Read + Seek>(&self, f: &mut R) -> Vec<u8> {
-        read_bytes(
-            self.start,
-            self.pty.size(),
-            self.order,
-            self.order,
-            f,
-        )
+        read_bytes(self.start, self.pty.size(), self.order, self.order, f)
     }
 
     pub fn eval<R: Read + Seek>(&self, f: &mut R) -> Val {
