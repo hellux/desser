@@ -74,7 +74,8 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
         for (id, f) in &st.fields {
             self.prepend_addr(&f)?;
             self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
-            if let Some(name) = self.symtab.name(*id) {
+            if let Some(sym) = id {
+                let name = self.symtab.name(*sym).unwrap();
                 write!(self.out, "{}: ", name)?;
             }
             self.fmt_field(&f, level)?;

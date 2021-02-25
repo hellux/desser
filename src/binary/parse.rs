@@ -223,7 +223,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             let elem = narr.elements.get(idx).unwrap();
 
             let mut ss = Namespace::new();
-            ss.insert(fl.elem, Name::Field(elem));
+            ss.insert(Some(fl.elem), Name::Field(elem));
 
             self.scope.enter_subscope(ss);
             let name_res = self.parse_field_type(&fl.ty);
@@ -275,7 +275,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             }
         }
         for (sym, spec) in &spec.structs {
-            let exists = static_space.insert(*sym, Name::Spec(spec));
+            let exists = static_space.insert(Some(*sym), Name::Spec(spec));
             if exists {
                 return Err(SErrorKind::FieldExists(*sym));
             }
@@ -430,16 +430,14 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn parse_field(&mut self, field: &ast::Field) -> SResult<()> {
         self.traversed_fields.push((field.span, field.id, self.pos));
 
-        let name = self.parse_field_type(&field.ty)?;
+        let nf = self.parse_field_type(&field.ty)?;
+
+        let exists = self.scope.insert_field(field.id, nf, field.hidden);
+        if exists {
+            return Err(SErrorKind::FieldExists(field.id.unwrap()));
+        }
 
         self.traversed_fields.pop();
-
-        if !field.hidden {
-            let exists = self.scope.insert_field(field.id, name);
-            if exists {
-                return Err(SErrorKind::FieldExists(field.id.unwrap()));
-            }
-        }
 
         Ok(())
     }

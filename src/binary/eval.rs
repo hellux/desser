@@ -109,9 +109,9 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
             }
             ExprKind::Member(st, mem) => {
                 if let NameField::Struct(ns) = self.expect_nf(&st)? {
-                    Partial::Name(Name::Field(ns.fields.get(&mem.sym).ok_or(
+                    Partial::Name(Name::Field(&ns.fields.get(&mem.sym).ok_or(
                         EError(mem.span, EErrorKind::MemberNotFound(mem.sym)),
-                    )?))
+                    )?.nf))
                 } else {
                     return Err(EError(
                         mem.span,

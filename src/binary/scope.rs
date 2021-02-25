@@ -6,9 +6,16 @@ use super::eval::{Partial, Val};
 use super::*;
 
 #[derive(Clone, Debug)]
-pub(super) struct SymSpace<T>(pub Vec<(Sym, T)>);
+pub(super) struct SymSpace<T>(pub Vec<(Option<Sym>, T)>);
 
-type FieldSpace = SymSpace<NameField>;
+#[derive(Clone, Debug)]
+pub(super) struct NameFieldElem {
+    pub nf: NameField,
+    pub hidden: bool,
+    // TODO format
+}
+
+type FieldSpace = SymSpace<NameFieldElem>;
 pub(super) type IndexSpace = Vec<NameField>;
 
 impl<T> SymSpace<T> {
@@ -20,11 +27,11 @@ impl<T> SymSpace<T> {
         self.0
             .iter()
             .rev()
-            .find_map(|(s, e)| if s == sym { Some(e) } else { None })
+            .find_map(|(s, e)| if *s == Some(*sym) { Some(e) } else { None })
     }
 
-    pub fn insert(&mut self, sym: Sym, e: T) -> bool {
-        let existed = self.get(&sym).is_some();
+    pub fn insert(&mut self, sym: Option<Sym>, e: T) -> bool {
+        let existed = sym.map(|s| self.get(&s).is_some()).unwrap_or(false);
         self.0.push((sym, e));
         existed
     }
@@ -52,7 +59,7 @@ impl<'n> Namespace<'n> {
         self.space.get(&sym)
     }
 
-    pub fn insert(&mut self, sym: Sym, name: Name<'n>) -> bool {
+    pub fn insert(&mut self, sym: Option<Sym>, name: Name<'n>) -> bool {
         self.space.insert(sym, name)
     }
 
@@ -69,7 +76,7 @@ impl<'n> Namespace<'n> {
             Partial::Name(name) => name,
         };
 
-        self.insert(sym, name)
+        self.insert(Some(sym), name)
     }
 }
 
@@ -156,7 +163,6 @@ pub(super) struct Scope<'n> {
     structs: Vec<StructScope<'n>>, // last most inner
     self_sym: Sym,
     super_sym: Sym,
-    unnamed: Sym, // next sym for unnamed
 }
 
 impl<'n> Scope<'n> {
@@ -174,7 +180,6 @@ impl<'n> Scope<'n> {
             structs: vec![builtins],
             self_sym: st.ident_sym(BuiltInIdent::IdSelf),
             super_sym: st.ident_sym(BuiltInIdent::Super),
-            unnamed: Sym::max_value(),
         }
     }
 
@@ -204,13 +209,13 @@ impl<'n> Scope<'n> {
         }
 
         /* check all local blocks for previous fields */
-        if let Some(name) = current_struct
+        if let Some(elem) = current_struct
             .blocks
             .iter()
             .rev()
             .find_map(|b| b.st().fields.get(&sym))
         {
-            return Some(Name::Field(name));
+            return Some(Name::Field(&elem.nf));
         }
 
         /* check all above structs for struct specs and parameters */
@@ -235,17 +240,10 @@ impl<'n> Scope<'n> {
 
     pub fn insert_field(
         &mut self,
-        sym_opt: Option<Sym>,
+        sym: Option<Sym>,
         nf: NameField,
+        hidden: bool,
     ) -> bool {
-        let sym = sym_opt.map_or_else(
-            || {
-                self.unnamed -= 1;
-                self.unnamed
-            },
-            |sym| sym,
-        );
-
         let curr = self
             .structs
             .last_mut()
@@ -265,7 +263,8 @@ impl<'n> Scope<'n> {
             curr.size = curr.size + size;
         }
 
-        curr.fields.insert(sym, nf)
+        let s = if hidden { None } else { sym };
+        curr.fields.insert(s, NameFieldElem { nf, hidden })
     }
 
     pub fn enter_struct(&mut self, base: BitPos, static_scope: Namespace<'n>) {
@@ -317,7 +316,7 @@ impl<'n> Scope<'n> {
 
     pub fn enter_selfscope(&mut self, self_nf: &'n NameField) {
         let mut ns = Namespace::new();
-        ns.insert(self.self_sym, Name::Field(self_nf));
+        ns.insert(Some(self.self_sym), Name::Field(self_nf));
         self.enter_subscope(ns);
     }
 

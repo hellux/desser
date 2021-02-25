@@ -1,4 +1,4 @@
-use super::scope::{NameArray, NameField, NameStruct};
+use super::scope::{NameArray, NameField, NameStruct, NameFieldElem};
 use super::*;
 use std::convert::{TryFrom, TryInto};
 
@@ -20,7 +20,7 @@ pub struct Array {
 pub struct Struct {
     pub start: BitPos,
     pub size: BitSize,
-    pub fields: Vec<(Sym, StructField)>,
+    pub fields: Vec<(Option<Sym>, StructField)>,
 }
 
 impl StructField {
@@ -57,6 +57,17 @@ impl StructField {
     }
 }
 
+impl TryFrom<NameFieldElem> for StructField {
+    type Error = ();
+    fn try_from(nfe: NameFieldElem) -> Result<Self, Self::Error> {
+        if nfe.hidden {
+            Err(())
+        } else {
+            nfe.nf.try_into()
+        }
+    }
+}
+
 impl TryFrom<NameField> for StructField {
     type Error = ();
     fn try_from(nf: NameField) -> Result<Self, Self::Error> {
@@ -72,7 +83,7 @@ impl TryFrom<NameField> for StructField {
 impl TryFrom<NameStruct> for StructField {
     type Error = ();
     fn try_from(nst: NameStruct) -> Result<Self, Self::Error> {
-        let mut fields: Vec<(Sym, StructField)> = nst
+        let mut fields: Vec<(Option<Sym>, StructField)> = nst
             .fields
             .0
             .into_iter()
