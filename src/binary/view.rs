@@ -97,9 +97,9 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             if let StructField::Prim(Ptr {
                 pty: PrimType::Char,
                 ..
-            }) = arr.elements[0]
+            }) = arr.elements[0].1
             {
-                for f in &arr.elements {
+                for (_, f) in &arr.elements {
                     self.fmt_field(f, level)?;
                 }
             } else {
@@ -108,7 +108,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
                     self.out.write_all(b"[\n")?;
                 }
 
-                for (i, f) in arr.elements.iter().enumerate() {
+                for (i, f) in &arr.elements {
                     self.prepend_addr(f)?;
                     self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
                     write!(self.out, "{:0>w$}: ", i, w = w,)?;

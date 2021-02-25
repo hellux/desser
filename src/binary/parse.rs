@@ -71,23 +71,27 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn seek_loc(&mut self, loc: &ast::Location) -> SResult<()> {
-        let struct_base = self.scope.base();
         match &loc.expr {
             Some(expr) => {
                 let base = match loc.base {
                     AddrBase::Absolute => BitPos::new(0),
                     AddrBase::Relative => self.pos,
-                    AddrBase::Local => struct_base,
+                    AddrBase::Local => self.scope.base(),
                 };
 
-                // TODO restrict addresses before struct_base?
                 let val = self.eval_size(expr)? as u64;
                 let offset = if loc.bitwise {
                     BitSize::new(val)
                 } else {
                     ByteSize(val).into()
                 };
-                self.seek(base + offset)?;
+
+                let new_pos = base + offset;
+                if new_pos >= self.pos {
+                    self.seek(base + offset)?;
+                } else {
+                    return Err(SErrorKind::AddrBeforePos(new_pos));
+                }
             }
             None => {}
         };
@@ -204,23 +208,19 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     fn parse_for_array(&mut self, fl: &ast::ForArray) -> SResult<NameArray> {
         let mut is = IndexSpace::new();
 
-        let len = self
-            .eval_partial(&fl.arr)?
-            .name()
-            .and_then(|n| n.field())
-            .and_then(NameField::elements)
-            .ok_or_else(|| fl.arr.err(EErrorKind::NonArray))?
-            .len();
+        let narr = if let Partial::Name(Name::Field(NameField::Array(narr))) =
+            self.eval_partial(&fl.arr)?
+        {
+            narr
+        } else {
+            return Err(fl.arr.err(EErrorKind::NonArrayIterator).into());
+        };
+
+        let len = narr.elements.len();
 
         let mut start = None;
         for idx in 0..len {
-            let elem = self
-                .eval_partial(&fl.arr)?
-                .name()
-                .and_then(|n| n.field())
-                .ok_or_else(|| fl.arr.err(EErrorKind::NonArray))?
-                .get_element(idx)
-                .unwrap();
+            let elem = narr.elements.get(idx).unwrap();
 
             let mut ss = Namespace::new();
             ss.insert(fl.elem, Name::Field(elem));
@@ -261,13 +261,24 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
         let mut static_space = Namespace::new();
         for (sym, expr) in spec.formal_params.iter().zip(params.iter()) {
-            static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            let exists =
+                static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
         }
         for (sym, expr) in &spec.constants {
-            static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            let exists =
+                static_space.insert_partial(*sym, self.eval_partial(expr)?);
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
         }
         for (sym, spec) in &spec.structs {
-            static_space.insert(*sym, Name::Spec(spec));
+            let exists = static_space.insert(*sym, Name::Spec(spec));
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
         }
 
         self.scope.enter_struct(self.pos, static_space);
@@ -319,7 +330,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                             Name::Spec(_) => {
                                 eprintln!("<struct specification>")
                             }
-                            Name::Value(_) => unreachable!(),
+                            Name::Value(val) => eprintln!("{:?} ", val),
                         },
                         Partial::Value(val) => eprintln!("{:?} ", val),
                     }
@@ -375,7 +386,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     self.parse_field_type(&if_type.else_res)?
                 }
             }
-            ast::FieldKind::Null => NameField::Null,
+            ast::FieldKind::Null => NameField::Null(self.pos),
         };
 
         for constraint in &ty.properties.constraints {
@@ -424,7 +435,10 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         self.traversed_fields.pop();
 
         if !field.hidden {
-            self.scope.insert_field(field.id, name);
+            let exists = self.scope.insert_field(field.id, name);
+            if exists {
+                return Err(SErrorKind::FieldExists(field.id.unwrap()));
+            }
         }
 
         Ok(())

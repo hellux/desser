@@ -13,6 +13,8 @@ pub enum SErrorKind {
     EndOfFile(BitSize),
     FailedConstraint(Span),
     Expr(EError),
+    FieldExists(Sym),
+    AddrBeforePos(BitPos),
 }
 
 #[derive(Debug, Clone)]
@@ -29,9 +31,10 @@ pub enum EErrorKind {
     UnaryCompound,
     NonArray,
     NonField,
-    NonFunction,
-    NonStruct,
     NonValue,
+    NonStructMemberAccess,
+    NonArrayIndexAccess,
+    NonArrayIterator,
     NonIntegerIndex,
     NegativeIndex,
     NonIntegerSize,
