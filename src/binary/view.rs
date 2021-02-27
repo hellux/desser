@@ -71,8 +71,8 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             write!(self.out, "0x{:} ", st.size)?;
             self.out.write_all(b"{\n")?;
         }
-        for (id, f) in &st.fields.0 {
-            if !f.hidden && !matches!(f.kind, FieldKind::Null(_)) {
+        for (id, f) in &st.fields {
+            if !f.hidden && !matches!(f.kind.as_ref(), FieldKind::Null(_)) {
                 self.prepend_addr(&f.kind)?;
                 self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
                 if let Some(sym) = id {
@@ -100,7 +100,7 @@ impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
             if let FieldKind::Prim(Ptr {
                 pty: PrimType::Char,
                 ..
-            }) = arr.elements[0]
+            }) = arr.elements[0].as_ref()
             {
                 for f in &arr.elements {
                     self.fmt_field(f, level)?;

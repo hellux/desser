@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{
     AddrBase, BuiltInIdent, BuiltInProp, Error, ErrorType, Order, SpannedSym,
     Sym, SymbolTable,
@@ -64,14 +66,14 @@ impl From<PError> for Error {
 pub fn parse_file_spec(
     symtab: SymbolTable,
     tokens: TokenStream,
-) -> (Result<ast::Struct, Error>, SymbolTable, Vec<Error>) {
+) -> (Result<Rc<ast::Struct>, Error>, SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
     let file_spec = parser.parse_inner_struct(tokens);
     let (symtab, errors) = parser.consume();
 
     (
-        file_spec.map_err(|pe| pe.into()),
+        file_spec.map_err(|pe| pe.into()).map(|st| Rc::new(st)),
         symtab,
         errors.into_iter().map(|pe| pe.into()).collect(),
     )
@@ -242,7 +244,7 @@ impl Parser {
                 }) => {
                     self.eat(&mut stream)?; // def
                     let (id, st) = self.parse_struct(&mut stream)?;
-                    structs.push((id, st));
+                    structs.push((id, Rc::new(st)));
                 }
                 TokTree::Token(Token {
                     kind: TokKind::Keyword(Keyword::Const),

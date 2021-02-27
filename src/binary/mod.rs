@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 mod bits;
 mod error;
 mod eval;
@@ -14,7 +16,7 @@ pub use view::view_structure;
 
 pub fn parse_structure<'s, R: BufRead + Seek>(
     f: &'s mut R,
-    root_spec: &'s ast::Struct,
+    root_spec: Rc<ast::Struct>,
     symtab: &mut SymbolTable,
 ) -> Result<Struct, Error> {
     parse::parse(f, root_spec, symtab)
@@ -43,7 +45,7 @@ pub struct Ptr {
 
 #[derive(Debug, Clone)]
 pub struct Field {
-    pub kind: FieldKind,
+    pub kind: Rc<FieldKind>,
     pub hidden: bool,
 }
 
@@ -59,14 +61,14 @@ pub enum FieldKind {
 pub struct Array {
     pub start: BitPos,
     pub size: BitSize,
-    pub elements: Vec<FieldKind>,
+    pub elements: Vec<Rc<FieldKind>>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Struct {
     pub start: BitPos,
     pub size: BitSize,
-    pub fields: SymSpace<Field>,
+    pub fields: Vec<(Option<Sym>, Field)>,
 }
 
 impl FieldKind {
@@ -74,8 +76,12 @@ impl FieldKind {
         match self {
             Self::Prim(_) => true,
             Self::Array(arr) => {
-                if let Some(FieldKind::Prim(ptr)) = arr.elements.get(0) {
-                    matches!(ptr.pty, PrimType::Char)
+                if let Some(rc) = arr.elements.get(0) {
+                    if let &FieldKind::Prim(ptr) = &rc.as_ref() {
+                        matches!(ptr.pty, PrimType::Char)
+                    } else {
+                        false
+                    }
                 } else {
                     false
                 }
@@ -103,17 +109,20 @@ impl FieldKind {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct SymSpace<T>(pub Vec<(Option<Sym>, T)>);
+trait SymSpace<T> {
+    fn sym_get(&self, sym: Sym) -> Option<&T>;
+    fn sym_insert(&mut self, sym: Sym, val: T) -> bool;
+}
 
-impl<T> SymSpace<T> {
-    pub fn new() -> Self {
-        SymSpace(Vec::new())
-    }
+trait OptSymSpace<T> {
+    fn sym_get(&self, sym: Sym) -> Option<&T>;
+    fn sym_insert(&mut self, sym: Option<Sym>, e: T) -> bool;
+}
 
-    pub fn get(&self, sym: &Sym) -> Option<&T> {
-        self.0.iter().rev().find_map(|(s, e)| {
-            if *s == Some(*sym) {
+impl<T> OptSymSpace<T> for Vec<(Option<Sym>, T)> {
+    fn sym_get(&self, sym: Sym) -> Option<&T> {
+        self.iter().rev().find_map(|(s, e)| {
+            if *s == Some(sym) {
                 Some(e)
             } else {
                 None
@@ -121,13 +130,29 @@ impl<T> SymSpace<T> {
         })
     }
 
-    pub fn insert(&mut self, sym: Option<Sym>, e: T) -> bool {
-        let existed = sym.map(|s| self.get(&s).is_some()).unwrap_or(false);
-        self.0.push((sym, e));
+    fn sym_insert(&mut self, sym: Option<Sym>, e: T) -> bool {
+        let existed = sym.map(|s| self.sym_get(s).is_some()).unwrap_or(false);
+        self.push((sym, e));
         existed
     }
+}
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+impl<T> SymSpace<T> for Vec<(Sym, T)> {
+    fn sym_get(&self, sym: Sym) -> Option<&T> {
+        self.iter().rev().find_map(
+            |(s, e)| {
+                if *s == sym {
+                    Some(e)
+                } else {
+                    None
+                }
+            },
+        )
+    }
+
+    fn sym_insert(&mut self, sym: Sym, e: T) -> bool {
+        let existed = self.sym_get(sym).is_some();
+        self.push((sym, e));
+        existed
     }
 }

@@ -116,7 +116,7 @@ fn main() {
         Ok((spec, mut symtab)) => {
             let mut binary_file = BufReader::new(opts.input_file);
             eprintln!("binary parsing..");
-            match desser::parse_structure(&mut binary_file, &spec, &mut symtab)
+            match desser::parse_structure(&mut binary_file, spec, &mut symtab)
             {
                 Ok(root) => {
                     if opts.view {

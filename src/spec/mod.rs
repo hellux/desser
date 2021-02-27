@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 pub mod ast;
 mod lex;
 mod parse;
@@ -9,7 +11,7 @@ pub use lex::LitKind;
 
 pub fn parse_spec(
     sf: &SpecFile,
-) -> Result<(ast::Struct, SymbolTable), Vec<Error>> {
+) -> Result<(Rc<ast::Struct>, SymbolTable), Vec<Error>> {
     let mut errors: Vec<Error> = Vec::new();
     let symtab = SymbolTable::new();
     let (stream_res, symtab, mut lerr) =

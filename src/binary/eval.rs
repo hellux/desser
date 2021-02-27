@@ -19,13 +19,13 @@ pub enum Val {
 }
 
 #[derive(Clone, Debug)]
-pub(super) enum Partial<'a> {
+pub(super) enum Partial {
     Value(Val),
-    Name(Name<'a>),
+    Name(Name),
 }
 
-impl<'a> Partial<'a> {
-    pub fn name(self) -> Option<Name<'a>> {
+impl Partial {
+    pub fn name(self) -> Option<Name> {
         if let Partial::Name(name) = self {
             Some(name)
         } else {
@@ -62,14 +62,14 @@ impl Val {
 
 pub(super) struct Eval<'a, R: Read + Seek> {
     f: &'a mut R,
-    scope: &'a Scope<'a>,
+    scope: &'a Scope,
     symtab: &'a SymbolTable,
 }
 
 impl<'a, R: Read + Seek> Eval<'a, R> {
     pub fn new(
         f: &'a mut R,
-        scope: &'a Scope<'a>,
+        scope: &'a Scope,
         symtab: &'a SymbolTable,
     ) -> Self {
         Eval { f, scope, symtab }
@@ -100,7 +100,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         }
     }
 
-    pub fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial<'a>> {
+    pub fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial> {
         Ok(match &expr.kind {
             ExprKind::Variable(sym) => {
                 Partial::Name(self.scope.get(*sym).ok_or_else(|| {
@@ -108,15 +108,16 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 })?)
             }
             ExprKind::Member(st, mem) => {
-                if let FieldKind::Struct(ns) = self.expect_fk(&st)? {
+                if let FieldKind::Struct(ns) = self.expect_fk(&st)?.as_ref() {
                     Partial::Name(Name::Field(
-                        &ns.fields
-                            .get(&mem.sym)
+                        ns.fields
+                            .sym_get(mem.sym)
                             .ok_or(EError(
                                 mem.span,
                                 EErrorKind::MemberNotFound(mem.sym),
                             ))?
-                            .kind,
+                            .kind
+                            .clone(),
                     ))
                 } else {
                     return Err(EError(
@@ -136,11 +137,14 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                 } else {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
-                if let FieldKind::Array(arr) = fk {
+                if let FieldKind::Array(arr) = fk.as_ref() {
                     Partial::Name(Name::Field(
-                        arr.elements.get(u).ok_or_else(|| {
-                            expr.err(EErrorKind::ElementNotFound(u))
-                        })?,
+                        arr.elements
+                            .get(u)
+                            .ok_or_else(|| {
+                                expr.err(EErrorKind::ElementNotFound(u))
+                            })?
+                            .clone(),
                     ))
                 } else {
                     return Err(idx_expr.err(EErrorKind::NonArrayIndexAccess));
@@ -165,10 +169,10 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         }
     }
 
-    fn eval_name(&mut self, name: Name<'a>) -> Option<Val> {
+    fn eval_name(&mut self, name: Name) -> Option<Val> {
         Some(match name {
-            Name::Value(val) => val.clone(),
-            Name::Field(fk) => match fk {
+            Name::Value(val) => val.as_ref().clone(),
+            Name::Field(fk) => match fk.as_ref() {
                 FieldKind::Prim(ptr) => ptr.eval(self.f),
                 FieldKind::Array(Array { start, size, .. })
                 | FieldKind::Struct(Struct { start, size, .. }) => {
@@ -189,7 +193,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         })
     }
 
-    fn expect_fk(&mut self, expr: &'a Expr) -> EResult<&'a FieldKind> {
+    fn expect_fk(&mut self, expr: &'a Expr) -> EResult<Rc<FieldKind>> {
         self.eval_partial(expr)?
             .name()
             .and_then(|n| n.field())
@@ -239,7 +243,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn attr_length(&mut self, expr: &'a Expr) -> EResult<Val> {
-        if let FieldKind::Array(arr) = self.expect_fk(expr)? {
+        if let FieldKind::Array(arr) = self.expect_fk(expr)?.as_ref() {
             Ok(Val::Integer(arr.elements.len() as IntVal))
         } else {
             Err(expr.err(EErrorKind::NonArray))

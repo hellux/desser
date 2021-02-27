@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::spec::ast;
 use crate::BuiltInIdent;
 use crate::SymbolTable;
@@ -5,60 +7,31 @@ use crate::SymbolTable;
 use super::eval::{Partial, Val};
 use super::*;
 
-type FieldSpace = SymSpace<Field>;
+type FieldSpace = Vec<(Option<Sym>, Field)>;
+pub type Namespace = Vec<(Sym, Name)>;
 
 #[derive(Clone, Debug)]
-pub(super) struct Namespace<'n> {
-    space: SymSpace<Name<'n>>,
-    values: Vec<Val>,
+pub enum Name {
+    Value(Rc<Val>),
+    Field(Rc<FieldKind>),
+    Spec(Rc<ast::Struct>),
 }
 
-impl<'n> Namespace<'n> {
-    pub fn new() -> Self {
-        Namespace {
-            space: SymSpace::new(),
-            values: Vec::new(),
-        }
-    }
-
-    pub fn get(&self, sym: Sym) -> Option<&Name<'n>> {
-        self.space.get(&sym)
-    }
-
-    pub fn insert(&mut self, sym: Option<Sym>, name: Name<'n>) -> bool {
-        self.space.insert(sym, name)
-    }
-
-    pub fn insert_partial(&mut self, sym: Sym, part: Partial<'n>) -> bool {
-        let name = match part {
-            Partial::Value(val) => {
-                self.values.push(val);
-                Name::Value(unsafe {
-                    std::mem::transmute::<&Val, &'n Val>(
-                        self.values.last().unwrap(),
-                    )
-                })
-            }
-            Partial::Name(name) => name,
-        };
-
-        self.insert(Some(sym), name)
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub(super) enum Name<'n> {
-    Value(&'n Val),
-    Field(&'n FieldKind),
-    Spec(&'n ast::Struct),
-}
-
-impl<'n> Name<'n> {
-    pub fn field(&self) -> Option<&'n FieldKind> {
+impl Name {
+    pub fn field(&self) -> Option<Rc<FieldKind>> {
         if let Self::Field(field) = self {
-            Some(field)
+            Some(field.clone())
         } else {
             None
+        }
+    }
+}
+
+impl From<Partial> for Name {
+    fn from(part: Partial) -> Self {
+        match part {
+            Partial::Value(val) => Name::Value(Rc::new(val)),
+            Partial::Name(name) => name,
         }
     }
 }
@@ -90,29 +63,29 @@ impl FieldKind {
 }
 
 #[derive(Clone, Debug)]
-struct StructScope<'n> {
-    static_scope: Namespace<'n>, // accessible to all inner structs
-    local_scopes: Vec<Namespace<'n>>, // last is most inner
-    blocks: Vec<FieldKind>,
+struct StructScope {
+    static_scope: Namespace, // accessible to all inner structs
+    local_scopes: Vec<Namespace>, // last is most inner
+    blocks: Vec<Rc<FieldKind>>,
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct Scope<'n> {
-    structs: Vec<StructScope<'n>>, // last most inner
+pub(super) struct Scope {
+    structs: Vec<StructScope>, // last most inner
     self_sym: Sym,
     super_sym: Sym,
 }
 
-impl<'n> Scope<'n> {
+impl Scope {
     pub fn new(file_length: BitSize, st: &mut SymbolTable) -> Self {
         let builtins = StructScope {
             static_scope: Namespace::new(),
             local_scopes: vec![Namespace::new()],
-            blocks: vec![FieldKind::Struct(Struct {
+            blocks: vec![Rc::new(FieldKind::Struct(Struct {
                 start: BitPos::new(0),
                 size: file_length,
                 fields: FieldSpace::new(),
-            })],
+            }))],
         };
         Scope {
             structs: vec![builtins],
@@ -125,15 +98,11 @@ impl<'n> Scope<'n> {
         self.structs.last().unwrap().blocks[0].start()
     }
 
-    pub fn get(&self, sym: Sym) -> Option<Name<'n>> {
-        let current_struct = unsafe {
-            std::mem::transmute::<&StructScope, &StructScope<'n>>(
-                self.structs.last().unwrap(),
-            )
-        };
+    pub fn get(&self, sym: Sym) -> Option<Name> {
+        let current_struct = self.structs.last().unwrap();
 
         if sym == self.super_sym {
-            return Some(Name::Field(&current_struct.blocks[0]));
+            return Some(Name::Field(current_struct.blocks[0].clone()));
         }
 
         /* check all local scopes within struct for variables */
@@ -141,9 +110,9 @@ impl<'n> Scope<'n> {
             .local_scopes
             .iter()
             .rev()
-            .find_map(|s| s.get(sym))
+            .find_map(|s| s.sym_get(sym))
         {
-            return Some(*name);
+            return Some(name.clone());
         }
 
         /* check all local blocks for previous fields */
@@ -151,45 +120,42 @@ impl<'n> Scope<'n> {
             .blocks
             .iter()
             .rev()
-            .find_map(|b| b.st().fields.get(&sym))
+            .find_map(|b| b.st().fields.sym_get(sym))
         {
-            return Some(Name::Field(&field.kind));
+            return Some(Name::Field(field.kind.clone()));
         }
 
         /* check all above structs for struct specs and parameters */
         for st in self.structs.iter().rev() {
-            if let Some(name) = st.static_scope.get(sym) {
-                return Some(*name);
+            if let Some(name) = st.static_scope.sym_get(sym) {
+                return Some(name.clone());
             }
         }
 
         None
     }
 
-    pub fn insert_local(&mut self, sym: Sym, part: Partial<'n>) -> bool {
+    pub fn insert_local(&mut self, sym: Sym, part: Partial) -> bool {
         self.structs
             .last_mut()
             .unwrap()
             .local_scopes
             .last_mut()
             .unwrap()
-            .insert_partial(sym, part)
+            .sym_insert(sym, part.into())
     }
 
     pub fn insert_field(
         &mut self,
         sym: Option<Sym>,
-        kind: FieldKind,
+        kind: Rc<FieldKind>,
         hidden: bool,
     ) -> bool {
-        let curr = self
-            .structs
-            .last_mut()
-            .unwrap()
-            .blocks
-            .last_mut()
-            .unwrap()
-            .st_mut();
+        let curr = std::rc::Rc::get_mut(
+            self.structs.last_mut().unwrap().blocks.last_mut().unwrap(),
+        )
+        .unwrap()
+        .st_mut();
 
         let start = kind.start();
         let size = kind.size();
@@ -202,15 +168,16 @@ impl<'n> Scope<'n> {
         }
 
         let s = if hidden { None } else { sym };
-        curr.fields.insert(s, Field { kind, hidden })
+        curr.fields.sym_insert(s, Field { kind, hidden })
     }
 
-    pub fn enter_struct(&mut self, base: BitPos, static_scope: Namespace<'n>) {
-        let blocks = vec![FieldKind::Struct(Struct {
+    pub fn enter_struct(&mut self, base: BitPos, static_scope: Namespace) {
+        let blocks = vec![Rc::new(FieldKind::Struct(Struct {
             start: base,
             size: BitSize::new(0),
             fields: FieldSpace::new(),
-        })];
+        }))];
+
         self.structs.push(StructScope {
             static_scope,
             local_scopes: vec![Namespace::new()],
@@ -219,42 +186,42 @@ impl<'n> Scope<'n> {
     }
 
     pub fn exit_struct(&mut self) -> Struct {
-        self.structs.pop().unwrap().blocks.pop().unwrap().into_st()
+        std::rc::Rc::try_unwrap(
+            self.structs.pop().unwrap().blocks.pop().unwrap(),
+        )
+        .unwrap()
+        .into_st()
     }
 
     pub fn enter_subblock(&mut self, base: BitPos) {
-        self.structs
-            .last_mut()
-            .unwrap()
-            .blocks
-            .push(FieldKind::Struct(Struct {
+        self.structs.last_mut().unwrap().blocks.push(Rc::new(
+            FieldKind::Struct(Struct {
                 start: base,
                 size: BitSize::new(0),
                 fields: FieldSpace::new(),
-            }));
+            }),
+        ));
     }
 
     pub fn exit_subblock(&mut self) -> Struct {
-        self.structs
-            .last_mut()
-            .unwrap()
-            .blocks
-            .pop()
-            .unwrap()
-            .into_st()
+        std::rc::Rc::try_unwrap(
+            self.structs.last_mut().unwrap().blocks.pop().unwrap(),
+        )
+        .unwrap()
+        .into_st()
     }
 
-    pub fn enter_subscope(&mut self, ns: Namespace<'n>) {
+    pub fn enter_subscope(&mut self, ns: Namespace) {
         self.structs.last_mut().unwrap().local_scopes.push(ns);
     }
 
-    pub fn exit_subscope(&mut self) -> Namespace<'n> {
+    pub fn exit_subscope(&mut self) -> Namespace {
         self.structs.last_mut().unwrap().local_scopes.pop().unwrap()
     }
 
-    pub fn enter_selfscope(&mut self, self_fk: &'n FieldKind) {
+    pub fn enter_selfscope(&mut self, self_fk: Rc<FieldKind>) {
         let mut ns = Namespace::new();
-        ns.insert(Some(self.self_sym), Name::Field(self_fk));
+        ns.sym_insert(self.self_sym, Name::Field(self_fk));
         self.enter_subscope(ns);
     }
 

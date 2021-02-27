@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::{AddrBase, Order, SpannedSym, Sym};
 
 use super::lex::LitKind;
@@ -8,7 +10,7 @@ use super::Span;
 #[derive(Clone, Debug)]
 pub struct Struct {
     pub formal_params: Vec<Sym>,
-    pub structs: Vec<(Sym, Struct)>,
+    pub structs: Vec<(Sym, Rc<Struct>)>,
     pub constants: Vec<(Sym, Expr)>,
     pub block: Block,
 }
