@@ -3,7 +3,7 @@ use crate::spec::LitKind;
 use crate::{BuiltInAttr, SpannedSym};
 
 use super::error::{EError, EErrorKind, EResult};
-use super::scope::{Name, Scope};
+use super::scope::{Name, Scopes};
 use super::*;
 
 pub type IntVal = i64;
@@ -44,14 +44,14 @@ impl Val {
 
 pub(super) struct Eval<'a, SR: SeekRead> {
     f: &'a mut SR,
-    scope: &'a Scope,
+    scope: &'a Scopes,
     symtab: &'a SymbolTable,
 }
 
 impl<'a, SR: SeekRead> Eval<'a, SR> {
     pub fn new(
         f: &'a mut SR,
-        scope: &'a Scope,
+        scope: &'a Scopes,
         symtab: &'a SymbolTable,
     ) -> Self {
         Eval { f, scope, symtab }

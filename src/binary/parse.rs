@@ -5,7 +5,7 @@ use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
 
 use super::error::{EErrorKind, EResult, SError, SErrorKind, SResult};
 use super::eval::{Eval, IntVal, Val};
-use super::scope::{Name, Namespace, Scope};
+use super::scope::{Name, Namespace, Scopes};
 use super::*;
 
 pub(super) fn parse<SR: SeekRead>(
@@ -14,9 +14,9 @@ pub(super) fn parse<SR: SeekRead>(
     symtab: &mut SymbolTable,
 ) -> Result<Struct, Error> {
     let length = ByteSize(f.seek(SeekFrom::End(0)).unwrap()).into();
-    let scope = Scope::new(length, symtab);
+    let scope = Scopes::new(length, symtab);
     let mut fp = FileParser::new(f, scope, length, symtab);
-    let root_st = match fp.parse_struct(&root_spec, &[]) {
+    let root_st = match fp.parse_struct(&root_spec) {
         Ok(r) => r,
         Err(kind) => {
             let e = SError {
@@ -35,7 +35,7 @@ struct FileParser<'s, R> {
     f: &'s mut R,
     pos: BitPos,
     length: BitSize,
-    scope: Scope,
+    scope: Scopes,
     traversed_fields: Vec<(Span, Option<Sym>, BitPos)>,
     symtab: &'s SymbolTable,
     self_sym: Sym,
@@ -44,7 +44,7 @@ struct FileParser<'s, R> {
 impl<'s, SR: SeekRead> FileParser<'s, SR> {
     fn new(
         f: &'s mut SR,
-        scope: Scope,
+        scope: Scopes,
         length: BitSize,
         symtab: &'s SymbolTable,
     ) -> Self {
@@ -233,42 +233,54 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
         })
     }
 
-    fn parse_struct(
+    fn parse_defcall(
         &mut self,
-        spec: &Rc<ast::Struct>,
-        params: &[ast::Expr],
-    ) -> SResult<Struct> {
-        if spec.formal_params.len() != params.len() {
+        def: &Rc<ast::Definition>,
+        actual_params: &[ast::Expr],
+    ) -> SResult<Rc<FieldKind>> {
+        if def.formal_params.len() != actual_params.len() {
             return Err(SErrorKind::FormalActualMismatch(
-                spec.formal_params.len(),
-                params.len(),
+                def.formal_params.len(),
+                actual_params.len(),
             ));
         }
 
         let mut static_space = Namespace::new();
-        for (sym, expr) in spec
-            .formal_params
-            .iter()
-            .zip(params.iter())
-            .chain(spec.constants.iter().map(|(s, e)| (s, e)))
-        {
+        for (sym, expr) in def.formal_params.iter().zip(actual_params.iter()) {
             let name = self.eval_access(expr)?;
             let exists = static_space.sym_insert(*sym, name);
             if exists {
                 return Err(SErrorKind::FieldExists(*sym));
             }
         }
-        for (sym, st) in &spec.structs {
-            let name = Name::Spec(st.clone());
+
+        self.scope.enter_scope(self.pos, static_space);
+        let ft_res = self.parse_field_type(&def.ty);
+        self.scope.exit_scope();
+
+        ft_res
+    }
+
+    fn parse_struct(&mut self, spec: &ast::Struct) -> SResult<Struct> {
+        let mut static_space = Namespace::new();
+        for (sym, expr) in &spec.header.constants {
+            let name = self.eval_access(expr)?;
+            let exists = static_space.sym_insert(*sym, name);
+            if exists {
+                return Err(SErrorKind::FieldExists(*sym));
+            }
+        }
+        for (sym, st) in &spec.header.defs {
+            let name = Name::Def(st.clone());
             let exists = static_space.sym_insert(*sym, name);
             if exists {
                 return Err(SErrorKind::FieldExists(*sym));
             }
         }
 
-        self.scope.enter_struct(self.pos, static_space);
+        self.scope.enter_scope(self.pos, static_space);
         let success = self.parse_block(&spec.block);
-        let st = self.scope.exit_struct();
+        let st = self.scope.exit_scope();
 
         success?;
 
@@ -305,8 +317,8 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
                             )
                             .ok();
                         }
-                        Name::Spec(_) => {
-                            eprintln!("<struct specification>")
+                        Name::Def(_) => {
+                            eprintln!("<definition>")
                         }
                         Name::Value(val) => eprintln!("{:?} ", val),
                     }
@@ -332,6 +344,9 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
                     ast::Array::For(arr) => self.parse_for_array(arr)?,
                 }))
             }
+            ast::FieldKind::Struct(st) => {
+                Rc::new(FieldKind::Struct(self.parse_struct(st)?))
+            }
             ast::FieldKind::Block(block) => {
                 self.scope.enter_subblock(self.pos);
                 let success = self.parse_block(block);
@@ -339,15 +354,13 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
                 success?;
                 Rc::new(FieldKind::Struct(st))
             }
-            ast::FieldKind::Struct(spec_sym, args) => {
+            ast::FieldKind::Name(spec_sym, args) => {
                 let name = self
                     .scope
                     .get(spec_sym.sym)
                     .ok_or(SErrorKind::TypeNotFound(*spec_sym))?;
-                if let Name::Spec(spec) = name {
-                    Rc::new(FieldKind::Struct(
-                        self.parse_struct(&spec, &args)?,
-                    ))
+                if let Name::Def(def) = name {
+                    self.parse_defcall(&def, &args)?
                 } else {
                     return Err(SErrorKind::NonSpec(*spec_sym));
                 }

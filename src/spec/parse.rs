@@ -69,7 +69,7 @@ pub fn parse_file_spec(
 ) -> (Result<Rc<ast::Struct>, Error>, SymbolTable, Vec<Error>) {
     let mut parser = Parser::new(symtab);
 
-    let file_spec = parser.parse_inner_struct(tokens);
+    let file_spec = parser.parse_struct(tokens);
     let (symtab, errors) = parser.consume();
 
     (
@@ -179,35 +179,34 @@ impl Parser {
         }
     }
 
-    // parse struct, including identifier and formal parameters
-    fn parse_struct(
+    fn parse_def(
         &mut self,
         stream: &mut TokenStream,
-    ) -> PResult<(Sym, ast::Struct)> {
+    ) -> PResult<(Sym, ast::Definition)> {
         self.eat(stream)?; // id
         let id = self.expect_ident()?;
 
-        self.eat(stream)?;
-        let mut dn = self.expect_delim()?;
-        let formal_params = if dn.delim == Paren {
-            let ps = self.parse_formal_params(dn.stream)?;
+        let formal_params = if matches!(
+            stream.peek(), Some(TokTree::Delim(dn)) if dn.delim == Paren
+        ) {
             self.eat(stream)?;
-            dn = self.expect_delim()?;
-            ps
+            let dn = self.expect_delim()?;
+            self.parse_formal_params(dn.stream)?
         } else {
             vec![]
         };
 
-        if dn.delim == Brace {
-            let mut spec = self.parse_inner_struct(dn.stream)?;
-            spec.formal_params = formal_params;
-            Ok((id, spec))
-        } else {
-            Err(self.err_hint(
-                UnexpectedOpenDelim(dn.delim),
-                "expected braces after struct id".to_string(),
-            ))
+        let ty = self.parse_field_type(stream, true)?;
+        let def = ast::Definition { formal_params, ty };
+
+        if stream.not_empty()
+            && !matches!(&def.ty.kind, ast::FieldKind::Struct(_))
+        {
+            self.eat(stream)?; // comma
+            self.assert_symbol(Symbol::Comma)?;
         }
+
+        Ok((id, def))
     }
 
     fn parse_formal_params(
@@ -230,11 +229,11 @@ impl Parser {
         Ok(params)
     }
 
-    fn parse_inner_struct(
+    fn parse_struct(
         &mut self,
         mut stream: TokenStream,
     ) -> PResult<ast::Struct> {
-        let mut structs = Vec::new();
+        let mut defs = Vec::new();
         let mut constants = Vec::new();
         while stream.not_empty() {
             match stream.peek().unwrap() {
@@ -243,8 +242,8 @@ impl Parser {
                     ..
                 }) => {
                     self.eat(&mut stream)?; // def
-                    let (id, st) = self.parse_struct(&mut stream)?;
-                    structs.push((id, Rc::new(st)));
+                    let (id, def) = self.parse_def(&mut stream)?;
+                    defs.push((id, Rc::new(def)));
                 }
                 TokTree::Token(Token {
                     kind: TokKind::Keyword(Keyword::Const),
@@ -261,9 +260,7 @@ impl Parser {
         let block = self.parse_block(stream)?;
 
         Ok(ast::Struct {
-            formal_params: vec![],
-            structs,
-            constants,
+            header: ast::Header { defs, constants },
             block,
         })
     }
@@ -361,7 +358,7 @@ impl Parser {
         self.eat(stream)?; // then kw
         self.assert_keyword(Keyword::Then)?;
 
-        let if_res = Box::new(self.parse_field_type(stream)?);
+        let if_res = Box::new(self.parse_field_type(stream, false)?);
         let else_res = Box::new(
             if let Some(TokTree::Token(Token {
                 kind: TokKind::Keyword(Keyword::Else),
@@ -370,7 +367,7 @@ impl Parser {
             {
                 self.eat(stream)?; // else kw
                 self.assert_keyword(Keyword::Else)?;
-                self.parse_field_type(stream)?
+                self.parse_field_type(stream, false)?
             } else {
                 ast::FieldType::null()
             },
@@ -388,7 +385,7 @@ impl Parser {
         mut stream: TokenStream,
     ) -> PResult<ast::Field> {
         let span = stream.span();
-        let ty = self.parse_field_type(&mut stream)?;
+        let ty = self.parse_field_type(&mut stream, false)?;
         let id = match stream.peek() {
             Some(TokTree::Token(Token {
                 kind: TokKind::Ident(_),
@@ -419,9 +416,10 @@ impl Parser {
     fn parse_field_type(
         &mut self,
         stream: &mut TokenStream,
+        definition: bool,
     ) -> PResult<ast::FieldType> {
         let properties = self.parse_properties(stream)?;
-        let kind = self.parse_field_kind(stream)?;
+        let kind = self.parse_field_kind(stream, definition)?;
 
         Ok(ast::FieldType { kind, properties })
     }
@@ -505,6 +503,7 @@ impl Parser {
     fn parse_field_kind(
         &mut self,
         stream: &mut TokenStream,
+        definition: bool,
     ) -> PResult<ast::FieldKind> {
         self.eat(stream)?;
         Ok(match self.tree.take() {
@@ -518,13 +517,14 @@ impl Parser {
                 kind: TokKind::Ident(id),
                 ..
             }) => {
-                let params = match stream.peek() {
-                    Some(TokTree::Delim(dn)) if dn.delim == Paren => {
-                        self.eat(stream)?;
-                        let dn = self.expect_delim()?;
-                        self.parse_expr_list(dn.stream)?
-                    }
-                    _ => vec![],
+                let params = if matches!(
+                    stream.peek(), Some(TokTree::Delim(dn)) if dn.delim == Paren
+                ) {
+                    self.eat(stream)?;
+                    let dn = self.expect_delim()?;
+                    self.parse_expr_list(dn.stream)?
+                } else {
+                    vec![]
                 };
 
                 let name = self.symtab.name(id).unwrap();
@@ -551,7 +551,7 @@ impl Parser {
                             span: self.span,
                             sym: id,
                         };
-                        ast::FieldKind::Struct(ssym, params)
+                        ast::FieldKind::Name(ssym, params)
                     }
                 }
             }
@@ -559,7 +559,11 @@ impl Parser {
                 ast::FieldKind::Array(self.parse_array_type(dn.stream)?)
             }
             TokTree::Delim(dn) if dn.delim == Brace => {
-                ast::FieldKind::Block(self.parse_block(dn.stream)?)
+                if definition {
+                    ast::FieldKind::Struct(self.parse_struct(dn.stream)?)
+                } else {
+                    ast::FieldKind::Block(self.parse_block(dn.stream)?)
+                }
             }
             _ => {
                 return Err(self
@@ -603,7 +607,7 @@ impl Parser {
         if stream.not_empty() {
             self.eat(&mut stream)?; // semicolon, optional if no specified size
         }
-        let element_type = self.parse_field_type(&mut type_stream)?;
+        let element_type = self.parse_field_type(&mut type_stream, false)?;
         self.assert_eof(
             &type_stream,
             "expected semicolon or closing bracket after array type"
@@ -675,7 +679,7 @@ impl Parser {
         })
     }
 
-    // for_array ::- [for <sym> in <sas> <block>]
+    // for_array ::- [for <sym> in <sas> <field_type>]
     fn parse_for_array(
         &mut self,
         mut stream: TokenStream,
@@ -692,7 +696,7 @@ impl Parser {
         self.eat(&mut stream)?; // repeat keyword
         self.assert_keyword(Keyword::Repeat)?;
 
-        let ty = Box::new(self.parse_field_type(&mut stream)?);
+        let ty = Box::new(self.parse_field_type(&mut stream, false)?);
         self.assert_eof(&stream, "unexpected junk after for loop".to_string());
 
         Ok(ast::ForArray { elem, arr, ty })

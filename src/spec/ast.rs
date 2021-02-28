@@ -9,13 +9,23 @@ use super::Span;
 
 #[derive(Clone, Debug)]
 pub struct Struct {
-    pub formal_params: Vec<Sym>,
-    pub structs: Vec<(Sym, Rc<Struct>)>,
-    pub constants: Vec<(Sym, Expr)>,
+    pub header: Header,
     pub block: Block,
 }
 
+#[derive(Clone, Debug)]
+pub struct Header {
+    pub defs: Vec<(Sym, Rc<Definition>)>,
+    pub constants: Vec<(Sym, Expr)>,
+}
+
 pub type Block = Vec<Stmt>;
+
+#[derive(Clone, Debug)]
+pub struct Definition {
+    pub formal_params: Vec<Sym>,
+    pub ty: FieldType,
+}
 
 #[derive(Clone, Debug)]
 pub enum Stmt {
@@ -50,8 +60,8 @@ pub struct Field {
 
 #[derive(Clone, Debug)]
 pub struct FieldType {
-    pub kind: FieldKind,
     pub properties: Properties,
+    pub kind: FieldKind,
 }
 
 #[derive(Clone, Debug)]
@@ -74,8 +84,9 @@ pub enum Constraint {
 pub enum FieldKind {
     Prim(PrimType),
     Array(Array),
-    Struct(SpannedSym, Vec<Expr>),
+    Name(SpannedSym, Vec<Expr>),
     Block(Block),
+    Struct(Struct),
     If(IfCase<FieldType>),
     Null,
 }
