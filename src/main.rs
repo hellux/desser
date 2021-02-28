@@ -1,5 +1,6 @@
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io;
+use std::io::{Read};
 
 use desser::view_structure;
 use desser::SpecFile;
@@ -52,9 +53,11 @@ fn parse_options() -> Options {
                         }
                     }
                 }
+            } else if input_fname.is_none() {
+                input_fname = Some(arg);
             } else {
-                eprintln!("no flag");
-                exit_usage(&program)
+                eprintln!("excessive argument: {}", arg);
+                exit_usage(&program);
             }
         } else if spec.is_none() && spec_fname.is_none() {
             spec = Some(arg);
@@ -86,24 +89,89 @@ fn parse_options() -> Options {
         unreachable!()
     };
 
-    let input = if let Some(fname) = input_fname {
-        match File::open(&fname) {
-            Ok(f) => Box::new(f),
+    let input: Box<dyn desser::SeekRead> = match input_fname {
+        None => Box::new(SeekBuffer::new(io::stdin())),
+        Some(fname) if fname == "-" => Box::new(SeekBuffer::new(io::stdin())),
+        Some(fname) => match File::open(&fname) {
+            Ok(f) => Box::new(io::BufReader::new(f)),
             Err(e) => {
                 eprintln!("error when loading input file '{}' -- {}", fname, e);
                 std::process::exit(1);
             }
         }
-    } else {
-        eprintln!("no input file provided");
-        exit_usage(&program);
-        unreachable!()
     };
 
     Options {
         spec_file: sf,
         input_file: input,
         view,
+    }
+}
+
+struct SeekBuffer<R: io::Read> {
+    src: R,
+    exhausted: bool,
+    buf: Vec<u8>,
+    pos: u64,
+}
+
+impl<R: io::Read> SeekBuffer<R> {
+    fn new(src: R) -> Self {
+        SeekBuffer {
+            src,
+            exhausted: false,
+            buf: Vec::new(),
+            pos: 0,
+        }
+    }
+}
+
+impl<R: io::Read> io::Seek for SeekBuffer<R> {
+    fn seek(&mut self, style: io::SeekFrom) -> io::Result<u64> {
+        let (base_pos, offset) = match style {
+            io::SeekFrom::Start(n) => {
+                self.pos = n;
+                return Ok(n);
+            }
+            io::SeekFrom::End(n) => {
+                if !self.exhausted {
+                    self.src.read_to_end(&mut self.buf)?;
+                    self.exhausted = true;
+                }
+                (self.buf.len() as u64, n)
+            }
+            io::SeekFrom::Current(n) => (self.pos, n),
+        };
+        let new_pos = if offset >= 0 {
+            base_pos.checked_add(offset as u64)
+        } else {
+            base_pos.checked_sub((offset.wrapping_neg()) as u64)
+        };
+        match new_pos {
+            Some(n) => {
+                self.pos = n;
+                Ok(self.pos)
+            }
+            None => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid seek to a negative or overflowing position",
+            )),
+        }
+    }
+}
+
+impl<R: io::Read> io::Read for SeekBuffer<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let end_max = self.pos + buf.len() as u64;
+        if end_max > self.buf.len() as u64 {
+            self.src.by_ref().take(buf.len() as u64).read_to_end(&mut self.buf)?;
+        }
+
+        let end = u64::min(self.buf.len() as u64, end_max);
+        buf.copy_from_slice(&self.buf[self.pos as usize..end as usize]);
+        let n = end - self.pos;
+        self.pos = end;
+        Ok(n as usize)
     }
 }
 
@@ -114,7 +182,7 @@ fn main() {
     let mut errors = Vec::new();
     let symtab = match spec_res {
         Ok((spec, mut symtab)) => {
-            let mut binary_file = BufReader::new(opts.input_file);
+            let mut binary_file = opts.input_file;
             eprintln!("binary parsing..");
             match desser::parse_structure(&mut binary_file, spec, &mut symtab)
             {
@@ -122,7 +190,7 @@ fn main() {
                     if opts.view {
                         eprintln!("viewing..");
                         view_structure(
-                            &mut binary_file.into_inner(),
+                            &mut binary_file,
                             &mut std::io::stdout(),
                             &desser::FieldKind::Struct(root),
                             &symtab
