@@ -1,7 +1,7 @@
 use crate::spec::ast::Expr;
 use crate::{Error, ErrorType, Span, SpannedSym, Sym, SymbolTable};
 
-use super::bits::*;
+use super::bits::{BitPos, BitSize};
 use super::eval::IntVal;
 
 #[derive(Debug)]
@@ -81,8 +81,9 @@ impl Error {
         let hint = None;
 
         let span = match s.kind {
-            SErrorKind::TypeNotFound(ssym) => ssym.span,
-            SErrorKind::NonSpec(ssym) => ssym.span,
+            SErrorKind::TypeNotFound(ssym) | SErrorKind::NonSpec(ssym) => {
+                ssym.span
+            }
             SErrorKind::Expr(e) => e.0,
             SErrorKind::FailedConstraint(sp) => sp,
             _ => s.backtrace.pop().unwrap().0,

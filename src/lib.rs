@@ -214,16 +214,16 @@ impl SymbolTable {
             properties: HashMap::new(),
         };
 
-        for (_, name) in IDENTIFIERS.iter() {
+        for (_, name) in &IDENTIFIERS {
             tbl.insert(name);
         }
 
-        for (prop, name) in PROPERTIES.iter() {
+        for (prop, name) in &PROPERTIES {
             let sym = tbl.insert(name);
             tbl.properties.insert(sym, *prop);
         }
 
-        for (attr, name) in ATTRIBUTES.iter() {
+        for (attr, name) in &ATTRIBUTES {
             let sym = tbl.insert(name);
             tbl.attributes.insert(sym, *attr);
         }

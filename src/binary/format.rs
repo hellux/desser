@@ -126,13 +126,13 @@ impl PrimType {
     }
 
     pub fn fmt<W: io::Write>(
-        &self,
+        self,
         out: &mut W,
         data: &[u8],
     ) -> io::Result<()> {
         match self {
             PrimType::BitVec(n) => {
-                write!(out, "{:0n$b}", le8_to_uint(data), n = *n as usize)
+                write!(out, "{:0n$b}", le8_to_uint(data), n = n as usize)
             }
             PrimType::Char => write!(
                 out,

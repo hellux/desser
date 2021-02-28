@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::Chars;
 
-use self::LiteralKind::*;
+use self::LiteralKind::{Char, Int, Str};
 use self::Symbol::*;
 use self::TokenKind::*;
 

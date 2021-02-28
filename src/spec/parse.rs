@@ -73,7 +73,7 @@ pub fn parse_file_spec(
     let (symtab, errors) = parser.consume();
 
     (
-        file_spec.map_err(|pe| pe.into()).map(|st| Rc::new(st)),
+        file_spec.map_err(|pe| pe.into()).map(Rc::new),
         symtab,
         errors.into_iter().map(|pe| pe.into()).collect(),
     )

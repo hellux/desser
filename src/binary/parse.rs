@@ -7,15 +7,15 @@ use super::scope::{Name, Namespace, Scope};
 use super::*;
 use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
 
-pub(super) fn parse<'s, R: BufRead + Seek>(
-    f: &'s mut R,
+pub(super) fn parse<R: BufRead + Seek>(
+    f: &mut R,
     root_spec: Rc<ast::Struct>,
     symtab: &mut SymbolTable,
 ) -> Result<Struct, Error> {
     let length = ByteSize(f.seek(SeekFrom::End(0)).unwrap()).into();
     let scope = Scope::new(length, symtab);
     let mut fp = FileParser::new(f, scope, length, symtab);
-    let root_st = match fp.parse_struct(root_spec, &[]) {
+    let root_st = match fp.parse_struct(&root_spec, &[]) {
         Ok(r) => r,
         Err(kind) => {
             let e = SError {
@@ -234,7 +234,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
     fn parse_struct(
         &mut self,
-        spec: Rc<ast::Struct>,
+        spec: &Rc<ast::Struct>,
         params: &[ast::Expr],
     ) -> SResult<Struct> {
         if spec.formal_params.len() != params.len() {
@@ -275,7 +275,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn parse_block(&mut self, block: &[ast::Stmt]) -> SResult<()> {
-        block.iter().map(|s| self.parse_statement(s)).collect()
+        block.iter().try_for_each(|s| self.parse_statement(s))
     }
 
     fn parse_statement(&mut self, stmt: &ast::Stmt) -> SResult<()> {
@@ -344,7 +344,9 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
                     .get(spec_sym.sym)
                     .ok_or(SErrorKind::TypeNotFound(*spec_sym))?;
                 if let Name::Spec(spec) = name {
-                    Rc::new(FieldKind::Struct(self.parse_struct(spec, &args)?))
+                    Rc::new(FieldKind::Struct(
+                        self.parse_struct(&spec, &args)?,
+                    ))
                 } else {
                     return Err(SErrorKind::NonSpec(*spec_sym));
                 }
@@ -441,13 +443,13 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
 
     fn arr_len(&mut self, expr: &ast::Expr) -> SResult<usize> {
         if let Name::Field(rc) = self.eval_access(expr)? {
-            if let &FieldKind::Array(arr) = &rc.as_ref() {
+            if let FieldKind::Array(arr) = rc.as_ref() {
                 Ok(arr.elements.len())
             } else {
-                return Err(expr.err(EErrorKind::NonArrayIterator).into());
+                Err(expr.err(EErrorKind::NonArrayIterator).into())
             }
         } else {
-            return Err(expr.err(EErrorKind::NonArrayIterator).into());
+            Err(expr.err(EErrorKind::NonArrayIterator).into())
         }
     }
 
@@ -456,14 +458,14 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         expr: &ast::Expr,
         idx: usize,
     ) -> SResult<Rc<FieldKind>> {
-        if let Name::Field(rc) = self.eval_access(expr)?.into() {
-            if let &FieldKind::Array(arr) = &rc.as_ref() {
+        if let Name::Field(rc) = self.eval_access(expr)? {
+            if let FieldKind::Array(arr) = rc.as_ref() {
                 Ok(arr.elements.get(idx).unwrap().clone())
             } else {
-                return Err(expr.err(EErrorKind::NonArrayIterator).into());
+                Err(expr.err(EErrorKind::NonArrayIterator).into())
             }
         } else {
-            return Err(expr.err(EErrorKind::NonArrayIterator).into());
+            Err(expr.err(EErrorKind::NonArrayIterator).into())
         }
     }
 }

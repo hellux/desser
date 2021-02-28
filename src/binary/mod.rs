@@ -14,8 +14,8 @@ pub use bits::*;
 use std::io::{BufRead, Seek};
 pub use view::view_structure;
 
-pub fn parse_structure<'s, R: BufRead + Seek>(
-    f: &'s mut R,
+pub fn parse_structure<R: BufRead + Seek>(
+    f: &mut R,
     root_spec: Rc<ast::Struct>,
     symtab: &mut SymbolTable,
 ) -> Result<Struct, Error> {
@@ -25,9 +25,9 @@ pub fn parse_structure<'s, R: BufRead + Seek>(
 type PrimType = crate::PrimType<u8>;
 
 impl PrimType {
-    pub fn size(&self) -> BitSize {
+    pub fn size(self) -> BitSize {
         BitSize::new(match self {
-            PrimType::BitVec(len) => u64::from(*len),
+            PrimType::BitVec(len) => u64::from(len),
             PrimType::U8 | PrimType::I8 | PrimType::Char => 8,
             PrimType::U16 | PrimType::I16 => 16,
             PrimType::U32 | PrimType::I32 | PrimType::F32 => 32,
@@ -77,7 +77,7 @@ impl FieldKind {
             Self::Prim(_) => true,
             Self::Array(arr) => {
                 if let Some(rc) = arr.elements.get(0) {
-                    if let &FieldKind::Prim(ptr) = &rc.as_ref() {
+                    if let FieldKind::Prim(ptr) = rc.as_ref() {
                         matches!(ptr.pty, PrimType::Char)
                     } else {
                         false
@@ -131,7 +131,7 @@ impl<T> OptSymSpace<T> for Vec<(Option<Sym>, T)> {
     }
 
     fn sym_insert(&mut self, sym: Option<Sym>, e: T) -> bool {
-        let existed = sym.map(|s| self.sym_get(s).is_some()).unwrap_or(false);
+        let existed = sym.map_or(false, |s| self.sym_get(s).is_some());
         self.push((sym, e));
         existed
     }
