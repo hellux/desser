@@ -1,5 +1,3 @@
-use std::io::{Read, Seek};
-
 use crate::spec::ast::{BinOp, Expr, ExprKind, UnOp};
 use crate::spec::LitKind;
 use crate::{BuiltInAttr, SpannedSym};
@@ -44,15 +42,15 @@ impl Val {
     }
 }
 
-pub(super) struct Eval<'a, R: Read + Seek> {
-    f: &'a mut R,
+pub(super) struct Eval<'a, SR: SeekRead> {
+    f: &'a mut SR,
     scope: &'a Scope,
     symtab: &'a SymbolTable,
 }
 
-impl<'a, R: Read + Seek> Eval<'a, R> {
+impl<'a, SR: SeekRead> Eval<'a, SR> {
     pub fn new(
-        f: &'a mut R,
+        f: &'a mut SR,
         scope: &'a Scope,
         symtab: &'a SymbolTable,
     ) -> Self {

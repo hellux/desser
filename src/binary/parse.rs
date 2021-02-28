@@ -1,14 +1,15 @@
-use std::io::{BufRead, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::rc::Rc;
+
+use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
 
 use super::error::{EErrorKind, EResult, SError, SErrorKind, SResult};
 use super::eval::{Eval, IntVal, Val};
 use super::scope::{Name, Namespace, Scope};
 use super::*;
-use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
 
-pub(super) fn parse<R: BufRead + Seek>(
-    f: &mut R,
+pub(super) fn parse<SR: SeekRead>(
+    f: &mut SR,
     root_spec: Rc<ast::Struct>,
     symtab: &mut SymbolTable,
 ) -> Result<Struct, Error> {
@@ -40,9 +41,9 @@ struct FileParser<'s, R> {
     self_sym: Sym,
 }
 
-impl<'s, R: BufRead + Seek> FileParser<'s, R> {
+impl<'s, SR: SeekRead> FileParser<'s, SR> {
     fn new(
-        f: &'s mut R,
+        f: &'s mut SR,
         scope: Scope,
         length: BitSize,
         symtab: &'s SymbolTable,

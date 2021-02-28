@@ -1,10 +1,10 @@
 use std::io;
-use std::io::{Read, Seek, Write};
+use std::io::Write;
 
 use super::*;
 
-pub fn view_structure<R: Read + Seek, W: Write>(
-    f: &mut R,
+pub fn view_structure<SR: SeekRead, W: Write>(
+    f: &mut SR,
     output: &mut W,
     field: &FieldKind,
     symtab: &SymbolTable,
@@ -14,15 +14,15 @@ pub fn view_structure<R: Read + Seek, W: Write>(
     Ok(())
 }
 
-struct Viewer<'a, R: Read + Seek, W: Write> {
-    f: &'a mut R,
+struct Viewer<'a, SR: SeekRead, W: Write> {
+    f: &'a mut SR,
     out: &'a mut W,
     symtab: &'a SymbolTable,
     addr_len: usize,
 }
 
-impl<'a, R: Read + Seek, W: Write> Viewer<'a, R, W> {
-    fn new(f: &'a mut R, out: &'a mut W, symtab: &'a SymbolTable) -> Self {
+impl<'a, SR: SeekRead, W: Write> Viewer<'a, SR, W> {
+    fn new(f: &'a mut SR, out: &'a mut W, symtab: &'a SymbolTable) -> Self {
         Viewer {
             f,
             out,

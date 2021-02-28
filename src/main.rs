@@ -6,7 +6,7 @@ use desser::SpecFile;
 
 struct Options {
     spec_file: SpecFile,
-    input_file: File,
+    input_file: Box<dyn desser::SeekRead>,
     view: bool,
 }
 
@@ -88,7 +88,7 @@ fn parse_options() -> Options {
 
     let input = if let Some(fname) = input_fname {
         match File::open(&fname) {
-            Ok(f) => f,
+            Ok(f) => Box::new(f),
             Err(e) => {
                 eprintln!("error when loading input file '{}' -- {}", fname, e);
                 std::process::exit(1);

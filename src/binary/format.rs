@@ -1,28 +1,28 @@
 use std::convert::TryInto;
 use std::io;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 
 use super::bits::*;
 use super::eval::{FloatVal, IntVal, Val};
-use super::{Order, PrimType, Ptr};
+use super::{Order, PrimType, Ptr, SeekRead};
 
 impl Ptr {
-    pub fn read<R: Read + Seek>(&self, f: &mut R) -> Vec<u8> {
+    pub fn read<SR: SeekRead>(&self, f: &mut SR) -> Vec<u8> {
         read_bytes(self.start, self.pty.size(), self.order, self.order, f)
     }
 
-    pub fn eval<R: Read + Seek>(&self, f: &mut R) -> Val {
+    pub fn eval<SR: SeekRead>(&self, f: &mut SR) -> Val {
         let bytes = self.read(f);
         self.pty.eval(bytes.as_slice())
     }
 }
 
-pub fn read_bytes<R: Read + Seek>(
+pub fn read_bytes<SR: SeekRead>(
     start: BitPos,
     size: BitSize,
     byte_order: Order,
     bit_order: Order,
-    f: &mut R,
+    f: &mut SR,
 ) -> Vec<u8> {
     // read all bytes that data overlaps
     let start_byte: BytePos = start.into();
@@ -172,7 +172,7 @@ mod test_format {
     const BE: Order = Order::BigEndian;
     const LE: Order = Order::LittleEndian;
 
-    fn test_read<R: Read + Seek>(
+    fn test_read<SR: SeekRead>(
         start: u64,
         size: u64,
         order: Order,

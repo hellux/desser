@@ -1,4 +1,8 @@
+use std::io::{Read, Seek};
 use std::rc::Rc;
+
+use crate::spec::ast;
+use crate::{Error, Order, Sym, SymbolTable};
 
 mod bits;
 mod error;
@@ -8,14 +12,14 @@ mod parse;
 mod scope;
 mod view;
 
-use crate::spec::ast;
-use crate::{Error, Order, Sym, SymbolTable};
 pub use bits::*;
-use std::io::{BufRead, Seek};
 pub use view::view_structure;
 
-pub fn parse_structure<R: BufRead + Seek>(
-    f: &mut R,
+pub trait SeekRead: Seek + Read {}
+impl<T: Seek + Read> SeekRead for T {}
+
+pub fn parse_structure<SR: SeekRead>(
+    f: &mut SR,
     root_spec: Rc<ast::Struct>,
     symtab: &mut SymbolTable,
 ) -> Result<Struct, Error> {
