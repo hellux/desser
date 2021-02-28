@@ -112,11 +112,13 @@ impl<'a, SR: SeekRead, W: Write> Viewer<'a, SR, W> {
                 }
 
                 for (i, f) in arr.elements.iter().enumerate() {
-                    self.prepend_addr(f)?;
-                    self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
-                    write!(self.out, "{:0>w$}: ", i, w = w,)?;
-                    self.fmt_field(f, level)?;
-                    self.out.write_all(b",\n")?;
+                    if !matches!(f.as_ref(), FieldKind::Null(_)) {
+                        self.prepend_addr(f)?;
+                        self.out.write_all(&vec![b' '; 4 * (level - 1)])?;
+                        write!(self.out, "{:0>w$}: ", i, w = w,)?;
+                        self.fmt_field(f, level)?;
+                        self.out.write_all(b",\n")?;
+                    }
                 }
 
                 if level > 1 {
