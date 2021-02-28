@@ -2,7 +2,7 @@ use std::io::{BufRead, Seek, SeekFrom};
 use std::rc::Rc;
 
 use super::error::{EErrorKind, EResult, SError, SErrorKind, SResult};
-use super::eval::{Eval, IntVal, Partial, Val};
+use super::eval::{Eval, IntVal, Val};
 use super::scope::{Name, Namespace, Scope};
 use super::*;
 use crate::{AddrBase, BuiltInIdent, Error, Span, SymbolTable};
@@ -131,10 +131,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         Eval::new(self.f, &self.scope, &self.symtab).eval_nonzero(expr)
     }
 
-    fn eval_partial(&mut self, expr: &ast::Expr) -> SResult<Partial> {
-        let part =
-            Eval::new(self.f, &self.scope, &self.symtab).eval_partial(expr)?;
-        Ok(part)
+    fn eval_access(&mut self, expr: &ast::Expr) -> SResult<Name> {
+        Ok(Eval::new(self.f, &self.scope, &self.symtab).eval_access(expr)?)
     }
 
     fn parse_std_array(&mut self, arr: &ast::StdArray) -> SResult<Array> {
@@ -253,8 +251,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             .zip(params.iter())
             .chain(spec.constants.iter().map(|(s, e)| (s, e)))
         {
-            let part = self.eval_partial(expr)?;
-            let name = part.into();
+            let name = self.eval_access(expr)?;
             let exists = static_space.sym_insert(*sym, name);
             if exists {
                 return Err(SErrorKind::FieldExists(*sym));
@@ -285,8 +282,8 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         match stmt {
             ast::Stmt::Field(f) => self.parse_field(&f)?,
             ast::Stmt::Let(sym, expr) => {
-                let part = self.eval_partial(expr)?;
-                self.scope.insert_local(*sym, part);
+                let name = self.eval_access(expr)?;
+                self.scope.insert_local(*sym, name);
             }
             ast::Stmt::Constrain(exprs) => {
                 for expr in exprs {
@@ -297,23 +294,20 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
             }
             ast::Stmt::Debug(exprs) => {
                 for expr in exprs {
-                    match self.eval_partial(expr)? {
-                        Partial::Name(name) => match name {
-                            Name::Field(fk) => {
-                                view::view_structure(
-                                    self.f,
-                                    &mut std::io::stderr(),
-                                    &fk,
-                                    self.symtab,
-                                )
-                                .ok();
-                            }
-                            Name::Spec(_) => {
-                                eprintln!("<struct specification>")
-                            }
-                            Name::Value(val) => eprintln!("{:?} ", val),
-                        },
-                        Partial::Value(val) => eprintln!("{:?} ", val),
+                    match self.eval_access(expr)? {
+                        Name::Field(fk) => {
+                            view::view_structure(
+                                self.f,
+                                &mut std::io::stderr(),
+                                &fk,
+                                self.symtab,
+                            )
+                            .ok();
+                        }
+                        Name::Spec(_) => {
+                            eprintln!("<struct specification>")
+                        }
+                        Name::Value(val) => eprintln!("{:?} ", val),
                     }
                 }
                 eprintln!();
@@ -446,7 +440,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
     }
 
     fn arr_len(&mut self, expr: &ast::Expr) -> SResult<usize> {
-        if let Name::Field(rc) = self.eval_partial(expr)?.into() {
+        if let Name::Field(rc) = self.eval_access(expr)? {
             if let &FieldKind::Array(arr) = &rc.as_ref() {
                 Ok(arr.elements.len())
             } else {
@@ -462,7 +456,7 @@ impl<'s, R: BufRead + Seek> FileParser<'s, R> {
         expr: &ast::Expr,
         idx: usize,
     ) -> SResult<Rc<FieldKind>> {
-        if let Name::Field(rc) = self.eval_partial(expr)?.into() {
+        if let Name::Field(rc) = self.eval_access(expr)?.into() {
             if let &FieldKind::Array(arr) = &rc.as_ref() {
                 Ok(arr.elements.get(idx).unwrap().clone())
             } else {

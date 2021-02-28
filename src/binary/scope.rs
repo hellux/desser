@@ -4,7 +4,7 @@ use crate::spec::ast;
 use crate::BuiltInIdent;
 use crate::SymbolTable;
 
-use super::eval::{Partial, Val};
+use super::eval::Val;
 use super::*;
 
 type FieldSpace = Vec<(Option<Sym>, Field)>;
@@ -23,15 +23,6 @@ impl Name {
             Some(field.clone())
         } else {
             None
-        }
-    }
-}
-
-impl From<Partial> for Name {
-    fn from(part: Partial) -> Self {
-        match part {
-            Partial::Value(val) => Name::Value(Rc::new(val)),
-            Partial::Name(name) => name,
         }
     }
 }
@@ -135,14 +126,14 @@ impl Scope {
         None
     }
 
-    pub fn insert_local(&mut self, sym: Sym, part: Partial) -> bool {
+    pub fn insert_local(&mut self, sym: Sym, name: Name) -> bool {
         self.structs
             .last_mut()
             .unwrap()
             .local_scopes
             .last_mut()
             .unwrap()
-            .sym_insert(sym, part.into())
+            .sym_insert(sym, name)
     }
 
     pub fn insert_field(

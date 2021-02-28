@@ -18,22 +18,6 @@ pub enum Val {
     Compound(Vec<u8>, BitSize),
 }
 
-#[derive(Clone, Debug)]
-pub(super) enum Partial {
-    Value(Val),
-    Name(Name),
-}
-
-impl Partial {
-    pub fn name(self) -> Option<Name> {
-        if let Partial::Name(name) = self {
-            Some(name)
-        } else {
-            None
-        }
-    }
-}
-
 impl Val {
     pub fn int(&self) -> Option<IntVal> {
         if let Val::Integer(val) = self {
@@ -79,8 +63,8 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         match &expr.kind {
             ExprKind::Variable(_)
             | ExprKind::Member(_, _)
-            | ExprKind::Index(_, _) => self.eval_partial(expr).and_then(|p| {
-                self.eval_name(p.name().unwrap())
+            | ExprKind::Index(_, _) => self.eval_access(expr).and_then(|n| {
+                self.eval_name(n)
                     .ok_or_else(|| expr.err(EErrorKind::NonValue))
             }),
             ExprKind::Literal(kind) => match kind {
@@ -100,16 +84,23 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
         }
     }
 
-    pub fn eval_partial(&mut self, expr: &'a Expr) -> EResult<Partial> {
+    /* Evaluate until a name or value is found
+     * For example:
+     *      - a.b.c evaluates until c
+     *      - a[0] evaluates until the array element
+     *      - a remains a
+     *      - 5 remains 5
+     */
+    pub fn eval_access(&mut self, expr: &'a Expr) -> EResult<Name> {
         Ok(match &expr.kind {
             ExprKind::Variable(sym) => {
-                Partial::Name(self.scope.get(*sym).ok_or_else(|| {
+                self.scope.get(*sym).ok_or_else(|| {
                     expr.err(EErrorKind::IdentifierNotFound(*sym))
-                })?)
+                })?
             }
             ExprKind::Member(st, mem) => {
                 if let FieldKind::Struct(ns) = self.expect_fk(&st)?.as_ref() {
-                    Partial::Name(Name::Field(
+                    Name::Field(
                         ns.fields
                             .sym_get(mem.sym)
                             .ok_or(EError(
@@ -118,7 +109,7 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                             ))?
                             .kind
                             .clone(),
-                    ))
+                    )
                 } else {
                     return Err(EError(
                         mem.span,
@@ -138,19 +129,19 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
                     return Err(idx_expr.err(EErrorKind::NegativeIndex));
                 };
                 if let FieldKind::Array(arr) = fk.as_ref() {
-                    Partial::Name(Name::Field(
+                    Name::Field(
                         arr.elements
                             .get(u)
                             .ok_or_else(|| {
                                 expr.err(EErrorKind::ElementNotFound(u))
                             })?
                             .clone(),
-                    ))
+                    )
                 } else {
                     return Err(idx_expr.err(EErrorKind::NonArrayIndexAccess));
                 }
             }
-            _ => Partial::Value(self.eval(expr)?),
+            _ => Name::Value(Rc::new(self.eval(expr)?)),
         })
     }
 
@@ -194,9 +185,8 @@ impl<'a, R: Read + Seek> Eval<'a, R> {
     }
 
     fn expect_fk(&mut self, expr: &'a Expr) -> EResult<Rc<FieldKind>> {
-        self.eval_partial(expr)?
-            .name()
-            .and_then(|n| n.field())
+        self.eval_access(expr)?
+            .field()
             .ok_or_else(|| expr.err(EErrorKind::NonField))
     }
 
