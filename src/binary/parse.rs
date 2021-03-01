@@ -161,7 +161,9 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
             let elem_start = self.pos;
 
             // parse until constraint fails or max num is reached
-            let fk = match self.parse_field_type(&arr.ty) {
+            let fk = match self
+                .parse_field_type(&arr.ty.properties, &arr.ty.kind)
+            {
                 Ok(fk) => fk,
                 Err(k) => match k {
                     SErrorKind::FailedConstraint(_)
@@ -212,7 +214,7 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
             ss.sym_insert(fl.elem, Name::Field(elem));
 
             self.scope.enter_subscope(ss);
-            let fk_res = self.parse_field_type(&fl.ty);
+            let fk_res = self.parse_field_type(&fl.ty.properties, &fl.ty.kind);
             self.scope.exit_subscope();
 
             let fk = fk_res?;
@@ -236,6 +238,7 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
     fn parse_defcall(
         &mut self,
         def: &Rc<ast::Definition>,
+        properties: &ast::Properties,
         actual_params: &[ast::Expr],
     ) -> SResult<Rc<FieldKind>> {
         if def.formal_params.len() != actual_params.len() {
@@ -255,7 +258,10 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
         }
 
         self.scope.enter_scope(self.pos, static_space);
-        let ft_res = self.parse_field_type(&def.ty);
+        let ft_res = self.parse_field_type(
+            &def.ty.properties.apply(properties),
+            &def.ty.kind,
+        );
         self.scope.exit_scope();
 
         ft_res
@@ -332,12 +338,13 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
 
     fn parse_field_type(
         &mut self,
-        ty: &ast::FieldType,
+        properties: &ast::Properties,
+        kind: &ast::FieldKind,
     ) -> SResult<Rc<FieldKind>> {
-        self.seek_loc(&ty.properties.loc)?;
-        self.align(&ty.properties.alignment)?;
+        self.seek_loc(&properties.loc)?;
+        self.align(&properties.alignment)?;
 
-        let fk = match &ty.kind {
+        let fk = match kind {
             ast::FieldKind::Array(arr) => {
                 Rc::new(FieldKind::Array(match arr {
                     ast::Array::Std(arr) => self.parse_std_array(arr)?,
@@ -360,7 +367,7 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
                     .get(def_sym.sym)
                     .ok_or(SErrorKind::TypeNotFound(*def_sym))?;
                 if let Name::Def(def) = name {
-                    self.parse_defcall(&def, &args)?
+                    self.parse_defcall(&def, properties, &args)?
                 } else {
                     return Err(SErrorKind::NonType(*def_sym));
                 }
@@ -370,22 +377,28 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
                 let ptr = Ptr {
                     start: self.pos,
                     pty: spty,
-                    order: ty.properties.order,
+                    order: properties.order.unwrap_or_default(),
                 };
                 self.seek(ptr.start + ptr.pty.size())?;
                 Rc::new(FieldKind::Prim(ptr))
             }
             ast::FieldKind::If(if_type) => {
                 if self.eval_nonzero(&if_type.cond)? {
-                    self.parse_field_type(&if_type.if_res)?
+                    self.parse_field_type(
+                        &if_type.if_res.properties,
+                        &if_type.if_res.kind,
+                    )?
                 } else {
-                    self.parse_field_type(&if_type.else_res)?
+                    self.parse_field_type(
+                        &if_type.else_res.properties,
+                        &if_type.else_res.kind,
+                    )?
                 }
             }
             ast::FieldKind::Null => Rc::new(FieldKind::Null(self.pos)),
         };
 
-        for constraint in &ty.properties.constraints {
+        for constraint in &properties.constraints {
             self.scope.enter_selfscope(fk.clone());
             let self_var = ast::Expr {
                 kind: ast::ExprKind::Variable(self.self_sym),
@@ -425,7 +438,8 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
         self.traversed_fields.push((field.span, field.id, self.pos));
 
         let prev_pos = self.pos;
-        let fk_res = self.parse_field_type(&field.ty);
+        let fk_res =
+            self.parse_field_type(&field.ty.properties, &field.ty.kind);
 
         let fk = if field.ty.properties.peek {
             self.pos = prev_pos;

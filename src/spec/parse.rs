@@ -470,7 +470,7 @@ impl Parser {
                     };
                 }
                 Property::Order(ord) => {
-                    props.order = ord;
+                    props.order = Some(ord);
                 }
                 Property::Peek => {
                     props.peek = true;

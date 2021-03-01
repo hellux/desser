@@ -66,7 +66,7 @@ pub struct FieldType {
 
 #[derive(Clone, Debug)]
 pub struct Properties {
-    pub order: Order,
+    pub order: Option<Order>,
     pub loc: Location,
     pub alignment: Alignment,
     pub constraints: Vec<Constraint>,
@@ -136,10 +136,28 @@ impl FieldType {
     }
 }
 
+impl Properties {
+    pub fn apply(&self, other: &Properties) -> Self {
+        Properties {
+            order: other.order.or(self.order),
+            loc: self.loc.clone(),
+            alignment: self.alignment.clone(),
+            constraints: self
+                .constraints
+                .iter()
+                .cloned()
+                .chain(other.constraints.iter().cloned())
+                .collect(),
+            fin: None,
+            peek: other.peek,
+        }
+    }
+}
+
 impl Default for Properties {
     fn default() -> Self {
         Properties {
-            order: Order::LittleEndian,
+            order: None,
             loc: Location {
                 expr: None,
                 base: AddrBase::Absolute,
@@ -153,6 +171,12 @@ impl Default for Properties {
             fin: None,
             peek: false,
         }
+    }
+}
+
+impl Default for Order {
+    fn default() -> Self {
+        Order::LittleEndian
     }
 }
 
