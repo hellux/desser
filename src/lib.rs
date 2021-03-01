@@ -132,6 +132,8 @@ enum BuiltInProp {
     Le,
     Be,
 
+    Peek,
+
     Final,
     Constraint,
     Zero,
@@ -167,9 +169,10 @@ const IDENTIFIERS: [(BuiltInIdent, &str); 2] = [
     (BuiltInIdent::IdSelf, "#self"),
     (BuiltInIdent::Super, "super"),
 ];
-const PROPERTIES: [(BuiltInProp, &str); 20] = [
+const PROPERTIES: [(BuiltInProp, &str); 21] = [
     (BuiltInProp::Le, "le"),
     (BuiltInProp::Be, "be"),
+    (BuiltInProp::Peek, "peek"),
     (BuiltInProp::Final, "final"),
     (BuiltInProp::Constraint, "constraint"),
     (BuiltInProp::Zero, "zero"),

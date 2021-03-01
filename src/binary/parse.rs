@@ -424,9 +424,20 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
     fn parse_field(&mut self, field: &ast::Field) -> SResult<()> {
         self.traversed_fields.push((field.span, field.id, self.pos));
 
-        let fk = self.parse_field_type(&field.ty)?;
+        let prev_pos = self.pos;
+        let fk_res = self.parse_field_type(&field.ty);
 
-        let exists = self.scope.insert_field(field.id, fk, field.hidden);
+        let fk = if field.ty.properties.peek {
+            self.pos = prev_pos;
+            fk_res.unwrap_or(Rc::new(FieldKind::Null(prev_pos)))
+            // field might have been elsewhere depending on props.location
+        } else {
+            fk_res?
+        };
+
+        let named = !field.hidden;
+        let hidden = field.ty.properties.peek;
+        let exists = self.scope.insert_field(field.id, fk, named, hidden);
         if exists {
             return Err(SErrorKind::FieldExists(field.id.unwrap()));
         }

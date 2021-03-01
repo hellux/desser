@@ -472,6 +472,9 @@ impl Parser {
                 Property::Order(ord) => {
                     props.order = ord;
                 }
+                Property::Peek => {
+                    props.peek = true;
+                }
                 Property::Constr(constr) => {
                     let c = match constr {
                         Constr::Generic => {
@@ -916,8 +919,10 @@ impl From<BuiltInProp> for Property {
         match b {
             BuiltInProp::Le => Self::Order(Order::LittleEndian),
             BuiltInProp::Be => Self::Order(Order::BigEndian),
-            BuiltInProp::Final => Self::Final,
 
+            BuiltInProp::Peek => Self::Peek,
+
+            BuiltInProp::Final => Self::Final,
             BuiltInProp::Constraint => Self::Constr(Constr::Generic),
             BuiltInProp::Zero => Self::Constr(Constr::Zero(true)),
             BuiltInProp::NonZero => Self::Constr(Constr::Zero(false)),
@@ -966,6 +971,7 @@ enum Property {
     Constr(Constr),
     Location { base: AddrBase, bitwise: bool },
     Order(Order),
+    Peek,
 }
 
 #[derive(Copy, Clone, Debug)]

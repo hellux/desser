@@ -71,6 +71,7 @@ pub struct Properties {
     pub alignment: Alignment,
     pub constraints: Vec<Constraint>,
     pub fin: Option<Box<Expr>>,
+    pub peek: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -150,6 +151,7 @@ impl Default for Properties {
             },
             constraints: Vec::new(),
             fin: None,
+            peek: false,
         }
     }
 }

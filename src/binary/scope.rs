@@ -140,6 +140,7 @@ impl Scopes {
         &mut self,
         sym: Option<Sym>,
         kind: Rc<FieldKind>,
+        named: bool,
         hidden: bool,
     ) -> bool {
         let curr = std::rc::Rc::get_mut(
@@ -163,7 +164,7 @@ impl Scopes {
             curr.size = curr.size + size;
         }
 
-        let s = if hidden { None } else { sym };
+        let s = if named { sym } else { None };
         curr.fields.sym_insert(s, Field { kind, hidden })
     }
 
