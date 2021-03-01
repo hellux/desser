@@ -7,7 +7,7 @@ use super::eval::IntVal;
 #[derive(Debug)]
 pub enum SErrorKind {
     TypeNotFound(SpannedSym),
-    NonSpec(SpannedSym),
+    NonType(SpannedSym),
     FormalActualMismatch(usize, usize),
     NonPositiveAlignment(IntVal),
     EndOfFile(BitSize),
@@ -24,9 +24,8 @@ pub struct EError(pub Span, pub EErrorKind);
 pub enum EErrorKind {
     IdentifierNotFound(Sym),
     MemberNotFound(Sym),
-    ElementNotFound(usize),
+    ElementNotFound(usize, usize),
     NotAnAttribute(Sym),
-    ArgumentMismatch,
     BinaryTypeError,
     UnaryCompound,
     NonArray,
@@ -36,9 +35,9 @@ pub enum EErrorKind {
     NonArrayIndexAccess,
     NonArrayIterator,
     NonIntegerIndex,
-    NegativeIndex,
+    NegativeIndex(i64),
     NonIntegerSize,
-    NegativeSize,
+    NegativeSize(i64),
 }
 
 impl Expr {
@@ -76,12 +75,79 @@ impl Error {
             SErrorKind::FailedConstraint(_) => {
                 "unable to match constraint".to_string()
             }
-            k => format!("{:?}", k),
+            SErrorKind::FieldExists(sym) => format!(
+                "field '{}' already exists",
+                String::from(symtab.name(*sym).unwrap()),
+            ),
+            SErrorKind::NonType(ssym) => format!(
+                "'{}' is not a type",
+                String::from(symtab.name(ssym.sym).unwrap())
+            ),
+            SErrorKind::FormalActualMismatch(formal, actual) => format!(
+                "formal argument count {} does not match actual {}",
+                formal, actual
+            ),
+            SErrorKind::NonPositiveAlignment(al) => {
+                format!("alignment {} is not positive", al)
+            }
+            SErrorKind::AddrBeforePos(addr) => format!(
+                "address {} is before current position {}",
+                addr, s.pos
+            ),
+            SErrorKind::Expr(EError(_, kind)) => match kind {
+                EErrorKind::IdentifierNotFound(sym) => format!(
+                    "identifier '{}' not found",
+                    String::from(symtab.name(*sym).unwrap())
+                ),
+                EErrorKind::MemberNotFound(sym) => format!(
+                    "struct member '{}' not found",
+                    String::from(symtab.name(*sym).unwrap())
+                ),
+                EErrorKind::ElementNotFound(i, len) => format!(
+                    "index {} out of range for array with size {}",
+                    i, len
+                ),
+                EErrorKind::NotAnAttribute(sym) => format!(
+                    "'{}' is not an attribute",
+                    String::from(symtab.name(*sym).unwrap())
+                ),
+                EErrorKind::BinaryTypeError => {
+                    "invalid types for binary operator".to_string()
+                }
+                EErrorKind::UnaryCompound => {
+                    "cannot apply unary operators on compound types"
+                        .to_string()
+                }
+                EErrorKind::NonArray => "not an array".to_string(),
+                EErrorKind::NonField => "not a field".to_string(),
+                EErrorKind::NonValue => "not a value".to_string(),
+                EErrorKind::NonStructMemberAccess => {
+                    "cannot access members of non structs".to_string()
+                }
+                EErrorKind::NonArrayIndexAccess => {
+                    "cannot index non arrays".to_string()
+                }
+                EErrorKind::NonArrayIterator => {
+                    "cannot iterate over non arrays".to_string()
+                }
+                EErrorKind::NonIntegerIndex => {
+                    "index is not integral".to_string()
+                }
+                EErrorKind::NegativeIndex(i) => {
+                    format!("index {} is negative", i)
+                }
+                EErrorKind::NonIntegerSize => {
+                    "size is not integral".to_string()
+                }
+                EErrorKind::NegativeSize(s) => {
+                    format!("size {} is negative", s)
+                }
+            },
         };
         let hint = None;
 
         let span = match s.kind {
-            SErrorKind::TypeNotFound(ssym) | SErrorKind::NonSpec(ssym) => {
+            SErrorKind::TypeNotFound(ssym) | SErrorKind::NonType(ssym) => {
                 ssym.span
             }
             SErrorKind::Expr(e) => e.0,

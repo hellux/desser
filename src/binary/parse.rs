@@ -123,7 +123,7 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
         let val = Eval::new(self.f, &self.scope, &self.symtab).eval(expr)?;
         match val {
             Val::Integer(size) if size >= 0 => Ok(size),
-            Val::Integer(_neg) => Err(expr.err(EErrorKind::NegativeSize)),
+            Val::Integer(i) => Err(expr.err(EErrorKind::NegativeSize(i))),
             _ => Err(expr.err(EErrorKind::NonIntegerSize)),
         }
     }
@@ -354,15 +354,15 @@ impl<'s, SR: SeekRead> FileParser<'s, SR> {
                 success?;
                 Rc::new(FieldKind::Struct(st))
             }
-            ast::FieldKind::Name(spec_sym, args) => {
+            ast::FieldKind::Name(def_sym, args) => {
                 let name = self
                     .scope
-                    .get(spec_sym.sym)
-                    .ok_or(SErrorKind::TypeNotFound(*spec_sym))?;
+                    .get(def_sym.sym)
+                    .ok_or(SErrorKind::TypeNotFound(*def_sym))?;
                 if let Name::Def(def) = name {
                     self.parse_defcall(&def, &args)?
                 } else {
-                    return Err(SErrorKind::NonSpec(*spec_sym));
+                    return Err(SErrorKind::NonType(*def_sym));
                 }
             }
             ast::FieldKind::Prim(apty) => {

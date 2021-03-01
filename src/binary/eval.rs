@@ -124,17 +124,17 @@ impl<'a, SR: SeekRead> Eval<'a, SR> {
                 let u = if i >= 0 {
                     i as usize
                 } else {
-                    return Err(idx_expr.err(EErrorKind::NegativeIndex));
+                    return Err(idx_expr.err(EErrorKind::NegativeIndex(i)));
                 };
                 if let FieldKind::Array(arr) = fk.as_ref() {
-                    Name::Field(
-                        arr.elements
-                            .get(u)
-                            .ok_or_else(|| {
-                                expr.err(EErrorKind::ElementNotFound(u))
-                            })?
-                            .clone(),
-                    )
+                    let arrlen = arr.elements.len();
+                    if u < arrlen {
+                        Name::Field(arr.elements[u].clone())
+                    } else {
+                        return Err(
+                            expr.err(EErrorKind::ElementNotFound(u, arrlen))
+                        );
+                    }
                 } else {
                     return Err(idx_expr.err(EErrorKind::NonArrayIndexAccess));
                 }
