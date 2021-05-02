@@ -1,0 +1,34 @@
+/* pc screen font v2 */
+
+def psf2_header {
+    [u8; 4] magic,
+    u32 version,
+    u32 headersize,
+    u32 flags,
+    u32 length,
+    u32 charsize,
+    u32 height,
+    u32 width,
+
+    // optional asserts
+    constrain {
+        magic[0] == 0x72,
+        magic[1] == 0xb5,
+        magic[2] == 0x4a,
+        magic[3] == 0x86,
+        version == 0,
+        headersize >= 0x20,
+        flags <= 1,
+        length > 0,
+        charsize == height * ((width + 7) / 8),
+        height > 0,
+        width > 0,
+    }
+}
+
+def glyph(w, h) {
+    [align(1) be bitvec(w); h] bitmap,
+}
+
+psf2_header hdr,
+addr(hdr.headersize) [glyph(hdr.width, hdr.height); hdr.length] glyphs,
